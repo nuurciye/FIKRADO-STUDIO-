@@ -9,7 +9,10 @@ class ProductionProjectTest {
     private fun sample() = ProductionProject(
         id = ProjectId("p1"), name = "Product film", profile = ProductionProfile.ADVERTISING,
         settings = ProductionSettings(1920, 1080, 30000, 1001),
-        assets = listOf(ProductionAsset(AssetId("a1"), AssetKind.VIDEO, "content://source/1", "clip.mp4")),
+        assets = listOf(ProductionAsset(
+            AssetId("a1"), AssetKind.VIDEO, "content://source/1", "clip.mp4",
+            metadata = mapOf("source" to "camera")
+        )),
         scenes = listOf(ProductionScene(
             SceneId("s1"), "Opening", 5000,
             listOf(ProductionLayer(LayerId("l1"), LayerKind.VIDEO, 0, 5000, AssetId("a1")))
@@ -46,7 +49,7 @@ class ProductionProjectTest {
     }
 
     @Test fun decoderRejectsWrongTypesInStringMapsAndExtensions() {
-        val mapJson = ProductionProjectJson.encode(sample()).replace("\"metadata\": {},", "\"metadata\": {\"unexpected\": 7},")
+        val mapJson = ProductionProjectJson.encode(sample()).replace("\"source\": \"camera\"", "\"source\": 7")
         assertDecodeFails(mapJson)
 
         val extensionJson = ProductionProjectJson.encode(sample()).replace(
