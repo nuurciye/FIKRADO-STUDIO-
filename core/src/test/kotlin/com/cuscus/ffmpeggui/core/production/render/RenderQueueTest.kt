@@ -67,7 +67,7 @@ class RenderQueueTest {
         } finally {
             scope.cancel()
         }
-    }
+    } }
 
     @Test fun queueRejectsDuplicateJobIds() { runBlocking {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -83,7 +83,7 @@ class RenderQueueTest {
         } finally {
             scope.cancel()
         }
-    }
+    } }
 
     @Test fun queuedJobCanBeCancelledBeforeExecution() { runBlocking {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -102,7 +102,7 @@ class RenderQueueTest {
         } finally {
             scope.cancel()
         }
-    }
+    } }
 
     @Test fun runningJobCancellationIsObservable() { runBlocking {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -117,7 +117,7 @@ class RenderQueueTest {
         } finally {
             scope.cancel()
         }
-    }
+    } }
 
     @Test fun unknownAndTerminalJobsCannotBeCancelled() { runBlocking {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
