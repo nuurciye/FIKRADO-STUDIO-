@@ -1,6 +1,8 @@
 package com.cuscus.ffmpeggui.core.production.render
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -101,34 +103,43 @@ class RenderQueue(
                 }
 
                 val worker = scope.launch {
-                    val result = orchestrator.execute(plan) { progress ->
-                        scope.launch {
+                    try {
+                        val result = orchestrator.execute(plan) { progress ->
+                            scope.launch {
+                                mutex.withLock {
+                                    update(plan.jobId) { it.copy(progress = progress) }
+                                }
+                            }
+                        }
+                        mutex.withLock {
+                            update(plan.jobId) {
+                                if (result.isSuccess) {
+                                    it.copy(
+                                        status = RenderJobStatus.SUCCEEDED,
+                                        outputUri = result.renderResult?.outputUri,
+                                        issues = emptyList(),
+                                    )
+                                } else {
+                                    it.copy(
+                                        status = RenderJobStatus.FAILED,
+                                        issues = result.issues.ifEmpty {
+                                            listOf(RenderIssue(
+                                                result.renderResult?.errorCode ?: "render_failed",
+                                                "render",
+                                                result.renderResult?.errorMessage ?: "Render did not complete successfully."
+                                            ))
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    } catch (cancelled: CancellationException) {
+                        withContext(NonCancellable) {
                             mutex.withLock {
-                                update(plan.jobId) { it.copy(progress = progress) }
+                                update(plan.jobId) { it.copy(status = RenderJobStatus.CANCELLED) }
                             }
                         }
-                    }
-                    mutex.withLock {
-                        update(plan.jobId) {
-                            if (result.isSuccess) {
-                                it.copy(
-                                    status = RenderJobStatus.SUCCEEDED,
-                                    outputUri = result.renderResult?.outputUri,
-                                    issues = emptyList(),
-                                )
-                            } else {
-                                it.copy(
-                                    status = RenderJobStatus.FAILED,
-                                    issues = result.issues.ifEmpty {
-                                        listOf(RenderIssue(
-                                            result.renderResult?.errorCode ?: "render_failed",
-                                            "render",
-                                            result.renderResult?.errorMessage ?: "Render did not complete successfully."
-                                        ))
-                                    },
-                                )
-                            }
-                        }
+                        throw cancelled
                     }
                 }
                 mutex.withLock { workerJobs[plan.jobId] = worker }
