@@ -49,7 +49,7 @@ class RenderQueueTest {
         RenderOutputSpec(1280, 720, 30, 1, "mp4", "h264", outputUri = "output://$id.mp4"),
     )
 
-    @Test fun queueExecutesJobsSequentiallyAndPublishesSuccess() = runBlocking {
+    @Test fun queueExecutesJobsSequentiallyAndPublishesSuccess() { runBlocking {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         try {
             val adapter = QueueAdapter()
@@ -69,7 +69,7 @@ class RenderQueueTest {
         }
     }
 
-    @Test fun queueRejectsDuplicateJobIds() = runBlocking {
+    @Test fun queueRejectsDuplicateJobIds() { runBlocking {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         try {
             val queue = RenderQueue(scope, RenderOrchestrator(EngineRegistry(listOf(QueueAdapter()))))
@@ -85,7 +85,7 @@ class RenderQueueTest {
         }
     }
 
-    @Test fun queuedJobCanBeCancelledBeforeExecution() = runBlocking {
+    @Test fun queuedJobCanBeCancelledBeforeExecution() { runBlocking {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         try {
             val gate = CompletableDeferred<Unit>()
@@ -104,7 +104,7 @@ class RenderQueueTest {
         }
     }
 
-    @Test fun runningJobCancellationIsObservable() = runBlocking {
+    @Test fun runningJobCancellationIsObservable() { runBlocking {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         try {
             val gate = CompletableDeferred<Unit>()
@@ -119,7 +119,7 @@ class RenderQueueTest {
         }
     }
 
-    @Test fun unknownAndTerminalJobsCannotBeCancelled() = runBlocking {
+    @Test fun unknownAndTerminalJobsCannotBeCancelled() { runBlocking {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         try {
             val queue = RenderQueue(scope, RenderOrchestrator(EngineRegistry(listOf(QueueAdapter()))))
@@ -130,5 +130,5 @@ class RenderQueueTest {
         } finally {
             scope.cancel()
         }
-    }
+    } }
 }
