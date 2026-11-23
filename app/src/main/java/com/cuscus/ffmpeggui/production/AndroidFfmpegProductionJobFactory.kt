@@ -98,6 +98,12 @@ class AndroidFfmpegProductionJobFactory(
         if (request.output.container.lowercase() !in setOf("mp4", "video/mp4")) return issue(
             "unsupported_container", "output.container", "The first production mapper exports MP4 only."
         )
+        if (request.output.videoCodec?.lowercase()?.let { it != "h264" } == true) return issue(
+            "unsupported_video_codec", "output.videoCodec", "The first production mapper supports H.264 video only."
+        )
+        if (request.output.audioCodec?.lowercase()?.let { it != "aac" } == true) return issue(
+            "unsupported_audio_codec", "output.audioCodec", "The first production mapper supports AAC audio only."
+        )
         val fileName = asset.displayName.ifBlank { request.project.name.ifBlank { "production" } }
         val conversion = ConversionRequest(
             format = OutputFormat.MP4,
