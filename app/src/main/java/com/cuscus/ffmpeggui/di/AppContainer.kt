@@ -184,6 +184,34 @@ class AppContainer(
     val conversionEngine: ConversionEngine by lazy { engineInto(AppOutputDirectory(appContext)) }
 
     /**
+     * Durable state for the newer production render queue. Kept separate from
+     * the legacy editor's ProjectStore and export history.
+     */
+    val productionRenderJobStore: com.cuscus.ffmpeggui.core.production.render.RenderJobStore by lazy {
+        com.cuscus.ffmpeggui.core.production.render.JsonFileRenderJobStore(
+            java.io.File(appContext.filesDir, "production-render-jobs")
+        )
+    }
+
+    /**
+     * Registers the real app-owned FFmpeg conversion engine behind the
+     * production engine contract. The caller supplies the platform mapper
+     * because translating durable production assets into editor conversion
+     * requests must be explicit and lossless.
+     */
+    fun productionEngineRegistry(
+        jobFactory: com.cuscus.ffmpeggui.core.production.render.FfmpegProductionJobFactory,
+    ): com.cuscus.ffmpeggui.core.production.render.EngineRegistry {
+        val adapter = com.cuscus.ffmpeggui.core.production.render.FfmpegProductionAdapter(
+            runner = com.cuscus.ffmpeggui.core.production.render.FfmpegProductionRunner { job, onEvent ->
+                conversionEngine.run(job, onEvent)
+            },
+            jobFactory = jobFactory,
+        )
+        return com.cuscus.ffmpeggui.core.production.render.EngineRegistry(listOf(adapter))
+    }
+
+    /**
      * What editors stacked on one another apply (see core.stack): rendered by
      * an engine of its own into the cache, never among the exports.
      */
