@@ -144,29 +144,28 @@ class RenderQueue(
                             }
                         }
                         mutex.withLock {
-                            update(plan.jobId) {
-                                if (result.isSuccess) {
-                                    it.copy(
-                                        status = RenderJobStatus.SUCCEEDED,
-                                        outputUri = result.renderResult?.outputUri,
-                                        issues = emptyList(),
-                                    )
-                                } else {
-                                    it.copy(
-                                        status = RenderJobStatus.FAILED,
-                                        issues = result.issues.ifEmpty {
-                                            listOf(RenderIssue(
-                                                result.renderResult?.errorCode ?: "render_failed",
-                                                "render",
-                                                result.renderResult?.errorMessage ?: "Render did not complete successfully."
-                                            ))
-                                        },
-                                    )
-                                }
+                            val current = mutableJobs.value.first { it.jobId == plan.jobId }
+                            val terminal = if (result.isSuccess) {
+                                current.copy(
+                                    status = RenderJobStatus.SUCCEEDED,
+                                    outputUri = result.renderResult?.outputUri,
+                                    issues = emptyList(),
+                                )
+                            } else {
+                                current.copy(
+                                    status = RenderJobStatus.FAILED,
+                                    issues = result.issues.ifEmpty {
+                                        listOf(RenderIssue(
+                                            result.renderResult?.errorCode ?: "render_failed",
+                                            "render",
+                                            result.renderResult?.errorMessage ?: "Render did not complete successfully."
+                                        ))
+                                    },
+                                )
                             }
-                            // Persist the terminal snapshot before publishing it as observable.
-                            // Collectors must never see SUCCEEDED/FAILED while disk still says RUNNING.
-                            persist(plan.jobId)
+                            // Save the terminal snapshot before StateFlow publishes it to collectors.
+                            store?.save(StoredRenderJob(plan, terminal))
+                            update(plan.jobId) { terminal }
                         }
                     } catch (cancelled: CancellationException) {
                         withContext(NonCancellable) {
