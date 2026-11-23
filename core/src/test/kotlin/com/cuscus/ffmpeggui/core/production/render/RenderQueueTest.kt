@@ -6,7 +6,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
@@ -112,8 +111,8 @@ class RenderQueueTest {
             queue.enqueue(plan("cancel-running"))
             queue.jobs.first { it.firstOrNull()?.status == RenderJobStatus.RUNNING }
             assertTrue(queue.cancel(RenderJobId("cancel-running")))
-            delay(50)
-            assertEquals(RenderJobStatus.CANCELLED, queue.find(RenderJobId("cancel-running"))?.status)
+            val cancelled = queue.jobs.first { jobs -> jobs.firstOrNull()?.status == RenderJobStatus.CANCELLED }
+            assertEquals(RenderJobStatus.CANCELLED, cancelled.single().status)
         } finally {
             scope.cancel()
         }
