@@ -1,5 +1,7 @@
 package com.cuscus.ffmpeggui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,9 +20,16 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.cuscus.ffmpeggui.core.production.model.ProductionProject
 import com.cuscus.ffmpeggui.core.production.timeline.ProductionSceneTimeline
+
+private val EditorBackground = Color(0xFF090E18)
+private val EditorPanel = Color(0xFF141D2C)
+private val EditorGold = Color(0xFFD7AD62)
+private val EditorCream = Color(0xFFF4EBDD)
+private val EditorMuted = Color(0xFF9BA9BA)
 
 @Composable
 fun ProductionSceneEditorScreen(
@@ -41,22 +50,22 @@ fun ProductionSceneEditorScreen(
     }
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(18.dp),
+        modifier = Modifier.fillMaxSize().background(EditorBackground).padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            TextButton(onClick = onBack) { Text("All productions") }
-            Text("SCENE EDITOR", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
+            TextButton(onClick = onBack) { Text("‹  WORKSPACE", color = EditorMuted) }
+            Text("EDIT / TIMELINE", color = EditorGold, style = MaterialTheme.typography.labelLarge)
         }
-        Text(project.name, style = MaterialTheme.typography.headlineMedium)
+        Text(project.name, color = EditorCream, style = MaterialTheme.typography.headlineMedium)
         Text(
             "${project.settings.width} × ${project.settings.height}  •  ${project.settings.frameRateNumerator}/${project.settings.frameRateDenominator} FPS  •  ${project.profile.name.replace('_', ' ')}",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = EditorMuted,
             style = MaterialTheme.typography.bodyMedium,
         )
-        Card(modifier = Modifier.fillMaxWidth()) {
+        Card(modifier = Modifier.fillMaxWidth().border(1.dp, Color(0xFF344154), androidx.compose.foundation.shape.RoundedCornerShape(20.dp)), colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = EditorPanel)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(scene?.name ?: "Scene 1", style = MaterialTheme.typography.titleLarge)
+                Text(scene?.name ?: "Scene 1", color = EditorCream, style = MaterialTheme.typography.titleLarge)
                 Text(
                     if (scene == null) "Your timeline is empty. Import video, audio or images to start building the first scene."
                     else "${scene.layers.size} clips  •  ${scene.durationMs / 1000.0}s timeline  •  ${project.assets.size} media assets",
@@ -67,7 +76,7 @@ fun ProductionSceneEditorScreen(
                 }
             }
         }
-        Text("Timeline", style = MaterialTheme.typography.titleLarge)
+        Text("TIMELINE  /  LAYERS", color = EditorGold, style = MaterialTheme.typography.titleLarge)
         if (scene == null || scene.layers.isEmpty()) {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Text("No clips yet", modifier = Modifier.padding(20.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -81,7 +90,7 @@ fun ProductionSceneEditorScreen(
                         ?: asset?.durationMs ?: (sourceIn + layer.durationMs)
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(asset?.displayName ?: "Missing media", style = MaterialTheme.typography.titleMedium)
+                            Text(asset?.displayName ?: "Missing media", color = EditorCream, style = MaterialTheme.typography.titleMedium)
                             Text(
                                 "${layer.kind.name}  •  Timeline ${layer.startMs / 1000.0}s  •  Source ${sourceIn / 1000.0}–${sourceOut / 1000.0}s",
                                 style = MaterialTheme.typography.bodySmall,
@@ -136,7 +145,7 @@ fun ProductionSceneEditorScreen(
         }
         Spacer(Modifier.height(2.dp))
         Text(
-            "Sequential editing is enabled: split, trim, reorder, duplicate and remove clips. Multi-track compositing and live preview are the next milestones.",
+            "CLIP TOOLS  ·  Split, trim, reorder, duplicate and remove. Multi-track compositing and live preview remain in development.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
