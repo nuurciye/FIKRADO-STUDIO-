@@ -1,12 +1,14 @@
 package com.cuscus.ffmpeggui.production
 
 import com.cuscus.ffmpeggui.core.engine.MediaProbe
+import com.cuscus.ffmpeggui.core.engine.ConversionOutcome
 import com.cuscus.ffmpeggui.core.model.MediaInfo
 import com.cuscus.ffmpeggui.core.production.model.*
 import com.cuscus.ffmpeggui.core.production.render.*
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
+import java.util.concurrent.atomic.AtomicReference
 
 class AndroidFfmpegProductionJobFactoryTest {
     private val sceneId = SceneId("scene-1")
