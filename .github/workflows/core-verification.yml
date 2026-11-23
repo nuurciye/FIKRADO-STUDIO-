@@ -70,3 +70,14 @@ jobs:
 
       - name: Run Android production factory unit tests
         run: ./gradlew :app:testDebugUnitTest --tests '*AndroidFfmpegProductionJobFactoryTest' --no-daemon --stacktrace
+
+      - name: Assemble debug APK
+        run: ./gradlew :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: fikrado-studio-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
