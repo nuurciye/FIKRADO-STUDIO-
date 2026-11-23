@@ -768,6 +768,21 @@ class MainActivity : ComponentActivity() {
                             if (activeProject != null) {
                                 ProductionSceneEditorScreen(
                                     project = activeProject,
+                                    onProjectChanged = { updated ->
+                                        editingProject = updated
+                                        productionScope.launch {
+                                            try {
+                                                withContext(Dispatchers.IO) { productionRepository.save(updated) }
+                                                productionProjects = withContext(Dispatchers.IO) { productionRepository.loadAll() }
+                                            } catch (failure: Exception) {
+                                                android.widget.Toast.makeText(
+                                                    this@MainActivity,
+                                                    failure.message ?: "Could not save clip edits",
+                                                    android.widget.Toast.LENGTH_LONG,
+                                                ).show()
+                                            }
+                                        }
+                                    },
                                     onAddMedia = { mediaPicker.launch(arrayOf("video/*", "audio/*", "image/*")) },
                                     onBack = {
                                         editingProject = null
