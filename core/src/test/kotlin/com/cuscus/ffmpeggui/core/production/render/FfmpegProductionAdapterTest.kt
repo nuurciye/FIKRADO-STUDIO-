@@ -27,7 +27,7 @@ class FfmpegProductionAdapterTest {
         )
     }
 
-    @Test fun advertisesOnlyTheMvpVideoLayerCapability() {
+    @Test fun advertisesSupportedVideoAndAudioLayerCapabilities() {
         val adapter = FfmpegProductionAdapter(
             runner = FfmpegProductionRunner { _, _ -> error("Runner must not be called.") },
             jobFactory = FfmpegProductionJobFactory { FfmpegJobPreparation(issues = listOf(
@@ -35,7 +35,7 @@ class FfmpegProductionAdapterTest {
             )) },
         )
 
-        assertEquals(setOf(LayerKind.VIDEO), adapter.capabilities().supportedLayerKinds)
+        assertEquals(setOf(LayerKind.VIDEO, LayerKind.AUDIO), adapter.capabilities().supportedLayerKinds)
         assertTrue(adapter.capabilities().supportsAudio)
         assertTrue(adapter.capabilities().supportsCancellation)
     }
