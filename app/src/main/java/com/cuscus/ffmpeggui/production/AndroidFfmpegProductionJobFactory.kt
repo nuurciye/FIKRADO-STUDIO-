@@ -175,7 +175,7 @@ class AndroidFfmpegProductionJobFactory(
 
         val conversion = ConversionRequest(
             format = OutputFormat.MP4,
-            inputFileName = sources.first().displayName,
+            inputFileName = sources.first().name,
             sources = sourceInfo,
             segments = segments,
             encoding = EncodingSettings(resolution = resolution, framerate = frameRate),
