@@ -3,7 +3,6 @@ package com.cuscus.ffmpeggui.core.production.render
 import com.cuscus.ffmpeggui.core.engine.ConversionJob
 import com.cuscus.ffmpeggui.core.engine.ConversionOutcome
 import com.cuscus.ffmpeggui.core.engine.ConversionEvent
-import com.cuscus.ffmpeggui.core.engine.ConversionEngine
 import kotlinx.coroutines.CancellationException
 
 /**
@@ -26,6 +25,13 @@ fun interface FfmpegProductionJobFactory {
     suspend fun prepare(request: EngineRenderRequest): FfmpegJobPreparation
 }
 
+fun interface FfmpegProductionRunner {
+    suspend fun run(
+        job: ConversionJob,
+        onEvent: (ConversionEvent) -> Unit,
+    ): ConversionOutcome
+}
+
 /**
  * Adapts the mature ConversionEngine to the multi-engine production contract.
  *
@@ -34,7 +40,7 @@ fun interface FfmpegProductionJobFactory {
  * until the platform mapper can translate those semantics without data loss.
  */
 class FfmpegProductionAdapter(
-    private val engine: ConversionEngine,
+    private val runner: FfmpegProductionRunner,
     private val jobFactory: FfmpegProductionJobFactory,
 ) : EngineAdapter {
     override val id: EngineId = ENGINE_ID
@@ -88,7 +94,7 @@ class FfmpegProductionAdapter(
             )
         }
         val job = requireNotNull(prepared.job) { "FFmpeg job factory returned no job." }
-        return when (val outcome = engine.run(job) { event ->
+        return when (val outcome = runner.run(job) { event ->
             when (event) {
                 is ConversionEvent.Progress -> onProgress(EngineProgress(event.fraction, "FFmpeg encoding"))
                 is ConversionEvent.StageChanged -> onProgress(EngineProgress(null, event.stage.name.lowercase()))
