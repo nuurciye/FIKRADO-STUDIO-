@@ -11,6 +11,7 @@ import com.cuscus.ffmpeggui.core.model.ConversionRequest
 import com.cuscus.ffmpeggui.core.model.EncodingSettings
 import com.cuscus.ffmpeggui.core.model.Framerate
 import com.cuscus.ffmpeggui.core.model.OutputFormat
+import com.cuscus.ffmpeggui.core.model.PlacedSound
 import com.cuscus.ffmpeggui.core.model.Resolution
 import com.cuscus.ffmpeggui.core.model.Segment
 import com.cuscus.ffmpeggui.core.model.SourceInfo
@@ -18,6 +19,7 @@ import com.cuscus.ffmpeggui.core.production.model.AssetKind
 import com.cuscus.ffmpeggui.core.production.model.LayerKind
 import com.cuscus.ffmpeggui.core.production.model.LayerTransform
 import com.cuscus.ffmpeggui.core.production.timeline.ProductionSceneTimeline
+import com.cuscus.ffmpeggui.core.production.timeline.ProductionAudioTimeline
 import com.cuscus.ffmpeggui.core.production.render.EngineRenderRequest
 import com.cuscus.ffmpeggui.core.production.render.FfmpegJobPreparation
 import com.cuscus.ffmpeggui.core.production.render.FfmpegProductionJobFactory
@@ -51,7 +53,9 @@ class AndroidFfmpegProductionJobFactory(
             "invalid_scene_duration", "scenes[${scene.id.value}].durationMs", "Scene duration must be positive."
         )
 
-        val orderedLayers = scene.layers.sortedWith(compareBy({ it.startMs }, { it.zIndex }))
+        val orderedLayers = scene.layers.filter { it.kind == LayerKind.VIDEO }
+            .sortedWith(compareBy({ it.startMs }, { it.zIndex }))
+        if (orderedLayers.isEmpty()) return issue("video_layer_required", "scenes[${scene.id.value}].layers", "At least one VIDEO layer is required for an MP4 render.")
         val sources = mutableListOf<NamedSource>()
         val sourceInfo = mutableListOf<SourceInfo>()
         val segments = mutableListOf<Segment>()
@@ -150,6 +154,21 @@ class AndroidFfmpegProductionJobFactory(
             "Sequential clips cover $timelineCursor ms, but the scene declares ${scene.durationMs} ms."
         )
 
+        val audioProjection = ProductionAudioTimeline.project(scene, request.project.assets)
+        if (!audioProjection.isValid) {
+            val first = audioProjection.issues.first()
+            return issue(first.code, "scenes[${scene.id.value}].layers[${first.layerId}]", first.message)
+        }
+        val sounds = mutableListOf<NamedSource>()
+        val placedSounds = audioProjection.clips.map { clip ->
+            val asset = request.project.assets.first { it.id.value == clip.assetId }
+            if (asset.uri.isBlank()) return issue("empty_audio_uri", "assets[${asset.id.value}].uri", "The audio asset URI is empty.")
+            val info = try { mediaProbe.describe(asset.uri) } catch (_: Exception) { null }
+                ?: return issue("audio_source_unreadable", "assets[${asset.id.value}].uri", "Android could not read or probe this audio URI.")
+            if (!info.hasAudio) return issue("invalid_audio_source", "assets[${asset.id.value}]", "The selected asset has no readable audio stream.")
+            sounds += NamedSource(asset.uri, asset.displayName.ifBlank { "audio-${sounds.size + 1}.mp3" })
+            PlacedSound(startMs = clip.span.startMs, trimStartMs = clip.span.trimStartMs, trimEndMs = clip.span.trimEndMs, speed = clip.span.rate, repeats = clip.span.loops)
+        }
         val firstInfo = sourceInfo.first()
         val resolution = when (request.output.height) {
             240 -> Resolution.P240
@@ -205,10 +224,11 @@ class AndroidFfmpegProductionJobFactory(
             encoding = EncodingSettings(resolution = resolution, framerate = frameRate),
             canvas = ratio,
             canvasFit = CanvasFit.FIT,
+            sounds = placedSounds,
         )
         return FfmpegJobPreparation(job = ConversionJob(
             request = conversion,
-            sources = MediaSources(inputs = sources),
+            sources = MediaSources(inputs = sources, sounds = sounds),
             mode = CommandMode.Generated,
         ))
     }
