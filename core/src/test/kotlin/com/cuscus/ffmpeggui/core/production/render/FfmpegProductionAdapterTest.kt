@@ -58,6 +58,24 @@ class FfmpegProductionAdapterTest {
         assertEquals(0, mapperCalls)
     }
 
+    @Test fun validationDoesNotPrepareOrProbeTheHostJob() = runBlocking {
+        var mapperCalls = 0
+        val adapter = FfmpegProductionAdapter(
+            runner = FfmpegProductionRunner { _, _ -> error("Runner must not be called.") },
+            jobFactory = FfmpegProductionJobFactory {
+                mapperCalls++
+                FfmpegJobPreparation(issues = listOf(
+                    RenderIssue("mapper_not_configured", "assets", "No host mapper is configured.")
+                ))
+            },
+        )
+
+        val issues = adapter.validate(request())
+
+        assertTrue(issues.isEmpty())
+        assertEquals("Validation must not probe or prepare media.", 0, mapperCalls)
+    }
+
     @Test fun returnsStructuredFailureWhenHostCannotMapAssets() = runBlocking {
         var runnerCalls = 0
         val issue = RenderIssue("asset_uri_unavailable", "assets[0].uri", "Asset cannot be opened.")
