@@ -71,6 +71,17 @@ jobs:
       - name: Run Android production factory unit tests
         run: ./gradlew :app:testDebugUnitTest --tests '*AndroidFfmpegProductionJobFactoryTest' --no-daemon --stacktrace
 
+      - name: Upload Android unit-test reports (including failures)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fikrado-android-test-reports
+          path: |
+            app/build/test-results/testDebugUnitTest/
+            app/build/reports/tests/testDebugUnitTest/
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Assemble debug APK
         run: ./gradlew :app:assembleDebug --no-daemon --stacktrace
 
