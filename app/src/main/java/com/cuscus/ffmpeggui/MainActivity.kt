@@ -678,73 +678,144 @@ class MainActivity : ComponentActivity() {
                             var productionProjects by remember {
                                 mutableStateOf(emptyList<com.cuscus.ffmpeggui.core.production.model.ProductionProject>())
                             }
+                            var editingProject by remember {
+                                mutableStateOf<com.cuscus.ffmpeggui.core.production.model.ProductionProject?>(null)
+                            }
                             val productionScope = rememberCoroutineScope()
                             val productionRepository = container.productionProjectRepository
                             LaunchedEffect(Unit) {
                                 productionProjects = withContext(Dispatchers.IO) { productionRepository.loadAll() }
                             }
-                            ProductionStudioScreen(
-                                projects = productionProjects,
-                                onCreate = { name, profile ->
+                            val mediaPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+                                val current = editingProject
+                                if (uri != null && current != null) {
                                     productionScope.launch {
-                                        val now = System.currentTimeMillis()
-                                        val project = com.cuscus.ffmpeggui.core.production.model.ProductionProject(
-                                            id = com.cuscus.ffmpeggui.core.production.model.ProjectId(java.util.UUID.randomUUID().toString()),
-                                            name = name,
-                                            profile = profile,
-                                            settings = com.cuscus.ffmpeggui.core.production.model.ProductionSettings(
-                                                width = 1080,
-                                                height = 1920,
-                                                frameRateNumerator = 30,
-                                                frameRateDenominator = 1,
-                                            ),
-                                            scenes = emptyList(),
-                                            assets = emptyList(),
-                                            metadata = com.cuscus.ffmpeggui.core.production.model.ProjectMetadata(
-                                                createdAtEpochMs = now,
-                                                modifiedAtEpochMs = now,
-                                            ),
-                                        )
                                         try {
-                                            withContext(Dispatchers.IO) { productionRepository.save(project) }
+                                            runCatching {
+                                                contentResolver.takePersistableUriPermission(
+                                                    uri,
+                                                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                                                )
+                                            }
+                                            val mime = contentResolver.getType(uri).orEmpty()
+                                            val displayName = contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                                                val column = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                                                if (column >= 0 && cursor.moveToFirst()) cursor.getString(column) else null
+                                            } ?: uri.lastPathSegment ?: "Imported media"
+                                            val kind = when {
+                                                mime.startsWith("video/") -> com.cuscus.ffmpeggui.core.production.model.AssetKind.VIDEO
+                                                mime.startsWith("image/") -> com.cuscus.ffmpeggui.core.production.model.AssetKind.IMAGE
+                                                mime.startsWith("audio/") -> com.cuscus.ffmpeggui.core.production.model.AssetKind.AUDIO
+                                                else -> throw IllegalArgumentException("Choose a video, image or audio file.")
+                                            }
+                                            val duration = if (kind == com.cuscus.ffmpeggui.core.production.model.AssetKind.IMAGE) {
+                                                5000L
+                                            } else {
+                                                withContext(Dispatchers.IO) {
+                                                    val retriever = android.media.MediaMetadataRetriever()
+                                                    try {
+                                                        retriever.setDataSource(this@MainActivity, uri)
+                                                        retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+                                                            ?.takeIf { it > 0L }
+                                                    } finally {
+                                                        retriever.release()
+                                                    }
+                                                } ?: throw IllegalArgumentException("Could not read media duration.")
+                                            }
+                                            val assetId = com.cuscus.ffmpeggui.core.production.model.AssetId(java.util.UUID.randomUUID().toString())
+                                            val layerKind = when (kind) {
+                                                com.cuscus.ffmpeggui.core.production.model.AssetKind.VIDEO -> com.cuscus.ffmpeggui.core.production.model.LayerKind.VIDEO
+                                                com.cuscus.ffmpeggui.core.production.model.AssetKind.IMAGE -> com.cuscus.ffmpeggui.core.production.model.LayerKind.IMAGE
+                                                else -> com.cuscus.ffmpeggui.core.production.model.LayerKind.AUDIO
+                                            }
+                                            val scene = current.scenes.firstOrNull()
+                                            val sceneId = scene?.id ?: com.cuscus.ffmpeggui.core.production.model.SceneId(java.util.UUID.randomUUID().toString())
+                                            val start = scene?.durationMs ?: 0L
+                                            val asset = com.cuscus.ffmpeggui.core.production.model.ProductionAsset(
+                                                id = assetId, kind = kind, uri = uri.toString(),
+                                                displayName = displayName, mimeType = mime, durationMs = duration,
+                                            )
+                                            val layer = com.cuscus.ffmpeggui.core.production.model.ProductionLayer(
+                                                id = com.cuscus.ffmpeggui.core.production.model.LayerId(java.util.UUID.randomUUID().toString()),
+                                                kind = layerKind, startMs = start, durationMs = duration, assetId = assetId,
+                                            )
+                                            val updatedScene = if (scene == null) {
+                                                com.cuscus.ffmpeggui.core.production.model.ProductionScene(
+                                                    id = sceneId, name = "Scene 1", durationMs = duration, layers = listOf(layer),
+                                                )
+                                            } else scene.copy(durationMs = start + duration, layers = scene.layers + layer)
+                                            val updated = current.copy(
+                                                assets = current.assets + asset,
+                                                scenes = if (scene == null) listOf(updatedScene) else current.scenes.map {
+                                                    if (it.id == sceneId) updatedScene else it
+                                                },
+                                                metadata = current.metadata.copy(modifiedAtEpochMs = System.currentTimeMillis()),
+                                            )
+                                            withContext(Dispatchers.IO) { productionRepository.save(updated) }
+                                            editingProject = updated
                                             productionProjects = withContext(Dispatchers.IO) { productionRepository.loadAll() }
-                                            android.widget.Toast.makeText(
-                                                this@MainActivity,
-                                                "Production project saved",
-                                                android.widget.Toast.LENGTH_SHORT,
-                                            ).show()
                                         } catch (failure: Exception) {
                                             android.widget.Toast.makeText(
                                                 this@MainActivity,
-                                                failure.message ?: "Could not save production project",
+                                                failure.message ?: "Could not import media",
                                                 android.widget.Toast.LENGTH_LONG,
                                             ).show()
                                         }
                                     }
-                                },
-                                onOpen = { project ->
-                                    android.widget.Toast.makeText(
-                                        this@MainActivity,
-                                        "${project.name} is saved. Scene editing is the next production milestone.",
-                                        android.widget.Toast.LENGTH_LONG,
-                                    ).show()
-                                },
-                                onDelete = { project ->
-                                    productionScope.launch {
-                                        try {
-                                            withContext(Dispatchers.IO) { productionRepository.delete(project.id) }
+                                }
+                            }
+                            val activeProject = editingProject
+                            if (activeProject != null) {
+                                ProductionSceneEditorScreen(
+                                    project = activeProject,
+                                    onAddMedia = { mediaPicker.launch(arrayOf("video/*", "audio/*", "image/*")) },
+                                    onBack = {
+                                        editingProject = null
+                                        productionScope.launch {
                                             productionProjects = withContext(Dispatchers.IO) { productionRepository.loadAll() }
-                                        } catch (failure: Exception) {
-                                            android.widget.Toast.makeText(
-                                                this@MainActivity,
-                                                failure.message ?: "Could not delete production project",
-                                                android.widget.Toast.LENGTH_LONG,
-                                            ).show()
                                         }
-                                    }
-                                },
-                                onBack = { navController.popBackStack() },
-                            )
+                                    },
+                                )
+                            } else {
+                                ProductionStudioScreen(
+                                    projects = productionProjects,
+                                    onCreate = { name, profile ->
+                                        productionScope.launch {
+                                            val now = System.currentTimeMillis()
+                                            val project = com.cuscus.ffmpeggui.core.production.model.ProductionProject(
+                                                id = com.cuscus.ffmpeggui.core.production.model.ProjectId(java.util.UUID.randomUUID().toString()),
+                                                name = name, profile = profile,
+                                                settings = com.cuscus.ffmpeggui.core.production.model.ProductionSettings(
+                                                    width = 1080, height = 1920, frameRateNumerator = 30, frameRateDenominator = 1,
+                                                ),
+                                                scenes = emptyList(), assets = emptyList(),
+                                                metadata = com.cuscus.ffmpeggui.core.production.model.ProjectMetadata(
+                                                    createdAtEpochMs = now, modifiedAtEpochMs = now,
+                                                ),
+                                            )
+                                            try {
+                                                withContext(Dispatchers.IO) { productionRepository.save(project) }
+                                                productionProjects = withContext(Dispatchers.IO) { productionRepository.loadAll() }
+                                                android.widget.Toast.makeText(this@MainActivity, "Production project saved", android.widget.Toast.LENGTH_SHORT).show()
+                                            } catch (failure: Exception) {
+                                                android.widget.Toast.makeText(this@MainActivity, failure.message ?: "Could not save production project", android.widget.Toast.LENGTH_LONG).show()
+                                            }
+                                        }
+                                    },
+                                    onOpen = { project -> editingProject = project },
+                                    onDelete = { project ->
+                                        productionScope.launch {
+                                            try {
+                                                withContext(Dispatchers.IO) { productionRepository.delete(project.id) }
+                                                productionProjects = withContext(Dispatchers.IO) { productionRepository.loadAll() }
+                                            } catch (failure: Exception) {
+                                                android.widget.Toast.makeText(this@MainActivity, failure.message ?: "Could not delete production project", android.widget.Toast.LENGTH_LONG).show()
+                                            }
+                                        }
+                                    },
+                                    onBack = { navController.popBackStack() },
+                                )
+                            }
                         }
 
                         composable(Screen.FormatPicker.route) {
