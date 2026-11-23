@@ -209,6 +209,7 @@ class AppContainer(
                 conversionEngine.run(job, onEvent)
             },
             jobFactory = jobFactory,
+            outputPublisher = com.cuscus.ffmpeggui.production.AndroidContentUriOutputPublisher(appContext.contentResolver),
         )
         return com.cuscus.ffmpeggui.core.production.render.EngineRegistry(listOf(adapter))
     }
