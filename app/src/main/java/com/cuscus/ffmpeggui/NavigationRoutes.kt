@@ -4,6 +4,7 @@ import com.cuscus.ffmpeggui.settings.SettingsCategory
 
 sealed class Screen(val route: String) {
     data object Home : Screen("home")
+    data object ProductionStudio : Screen("production_studio")
     data object FormatPicker : Screen("format_picker")
     data object Config : Screen("config")
     /** The exact frame of a video, before it becomes a picture. */
