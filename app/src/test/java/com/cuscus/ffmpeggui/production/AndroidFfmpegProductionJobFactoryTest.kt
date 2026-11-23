@@ -209,6 +209,55 @@ class AndroidFfmpegProductionJobFactoryTest {
         assertEquals("unsupported_audio_codec", result.issues.single().code)
     }
 
+    @Test fun mapsAudioLayerToPlacedSoundAndKeepsItsTrimAndTimelinePosition() = runBlocking {
+        val audioId = AssetId("music-1")
+        val audioLayer = ProductionLayer(
+            id = LayerId("music-layer"),
+            kind = LayerKind.AUDIO,
+            startMs = 1_250L,
+            durationMs = 3_000L,
+            assetId = audioId,
+            properties = mapOf(
+                "sourceStartMs" to "2_000",
+                "sourceEndMs" to "5_000",
+                "speed" to "1.5",
+                "repeats" to "2",
+            ),
+        )
+        val audioAsset = ProductionAsset(
+            audioId, AssetKind.AUDIO, "content://media/audio/music", "music.mp3", durationMs = 10_000L,
+        )
+        val infos = mapOf(
+            "content://media/video/1" to MediaInfo.of(
+                durationMs = 5_000, isVideo = true, width = 1920, height = 1080,
+                fileSizeBytes = 1_000_000, hasAudio = true, frameRate = 30f,
+            ),
+            "content://media/audio/music" to MediaInfo.of(
+                durationMs = 10_000, isVideo = false, width = 0, height = 0,
+                fileSizeBytes = 500_000, hasAudio = true,
+            ),
+        )
+        val prepared = factory(infos).prepare(request(
+            layers = listOf(
+                ProductionLayer(LayerId("video-layer"), LayerKind.VIDEO, 0, 5_000, assetId),
+                audioLayer,
+            ),
+            assets = listOf(
+                ProductionAsset(assetId, AssetKind.VIDEO, "content://media/video/1", "clip.mp4", durationMs = 5_000),
+                audioAsset,
+            ),
+        ))
+        assertTrue(prepared.issues.toString(), prepared.issues.isEmpty())
+        val job = requireNotNull(prepared.job)
+        assertEquals(listOf("content://media/audio/music"), job.sources.sounds.map { it.uri })
+        val sound = job.request.sounds.single()
+        assertEquals(1_250L, sound.startMs)
+        assertEquals(2_000L, sound.trimStartMs)
+        assertEquals(5_000L, sound.trimEndMs)
+        assertEquals(1.5f, sound.speed)
+        assertEquals(2, sound.repeats)
+    }
+
     @Test fun adapterPublishesCompletedFileToTheRequestedContentUri() = runBlocking {
         val adapter = FfmpegProductionAdapter(
             runner = FfmpegProductionRunner { _, _ ->
