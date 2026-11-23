@@ -35,6 +35,7 @@ data class RenderJobSnapshot(
 class RenderQueue(
     private val scope: CoroutineScope,
     private val orchestrator: RenderOrchestrator,
+    private val store: RenderJobStore? = null,
 ) {
     private val mutex = Mutex()
     private val mutableJobs = MutableStateFlow<List<RenderJobSnapshot>>(emptyList())
@@ -43,6 +44,33 @@ class RenderQueue(
     private var workerRunning = false
 
     val jobs: StateFlow<List<RenderJobSnapshot>> = mutableJobs.asStateFlow()
+
+    /**
+     * Restores persisted jobs before accepting new work. Jobs interrupted while
+     * RUNNING are re-queued because the previous worker cannot survive process death.
+     */
+    suspend fun restore() {
+        mutex.withLock {
+            require(mutableJobs.value.isEmpty()) { "Queue restore must run before enqueueing jobs." }
+            val restored = store?.loadAll().orEmpty()
+            restored.forEach { stored ->
+                require(restored.count { it.plan.jobId == stored.plan.jobId } == 1) {
+                    "Persistent store contains duplicate job ID '${stored.plan.jobId.value}'."
+                }
+                val recoveredSnapshot = if (stored.snapshot.status == RenderJobStatus.RUNNING) {
+                    stored.snapshot.copy(status = RenderJobStatus.QUEUED, progress = null)
+                } else stored.snapshot
+                mutableJobs.value = mutableJobs.value + recoveredSnapshot
+                if (recoveredSnapshot.status == RenderJobStatus.QUEUED) {
+                    plans.addLast(stored.plan)
+                }
+                if (recoveredSnapshot != stored.snapshot) {
+                    store?.save(stored.copy(snapshot = recoveredSnapshot))
+                }
+            }
+            if (plans.isNotEmpty()) startWorkerIfNeeded()
+        }
+    }
 
     suspend fun enqueue(plan: RenderPlan): RenderJobSnapshot {
         val snapshot = RenderJobSnapshot(
@@ -54,6 +82,7 @@ class RenderQueue(
             require(mutableJobs.value.none { it.jobId == plan.jobId }) {
                 "Render job '${plan.jobId.value}' is already known to this queue."
             }
+            store?.save(StoredRenderJob(plan, snapshot))
             plans.addLast(plan)
             mutableJobs.value = mutableJobs.value + snapshot
             startWorkerIfNeeded()
@@ -69,6 +98,7 @@ class RenderQueue(
                 RenderJobStatus.QUEUED -> {
                     plans.removeAll { it.jobId == jobId }
                     update(jobId) { it.copy(status = RenderJobStatus.CANCELLED) }
+                    persist(jobId)
                     return true
                 }
                 RenderJobStatus.RUNNING -> worker = workerJobs[jobId]
@@ -109,6 +139,7 @@ class RenderQueue(
                             scope.launch {
                                 mutex.withLock {
                                     update(plan.jobId) { it.copy(progress = progress) }
+                                persist(plan.jobId)
                                 }
                             }
                         }
@@ -134,24 +165,28 @@ class RenderQueue(
                                 }
                             }
                         }
+                        mutex.withLock { persist(plan.jobId) }
                     } catch (cancelled: CancellationException) {
                         withContext(NonCancellable) {
                             mutex.withLock {
                                 update(plan.jobId) { it.copy(status = RenderJobStatus.CANCELLED) }
+                                persist(plan.jobId)
                             }
                         }
                         throw cancelled
                     }
                 }
                 mutex.withLock {
+                    activePlans[plan.jobId] = plan
                     workerJobs[plan.jobId] = worker
                     update(plan.jobId) { it.copy(status = RenderJobStatus.RUNNING) }
+                    persist(plan.jobId)
                 }
                 worker.start()
                 try {
                     worker.join()
                 } finally {
-                    mutex.withLock { workerJobs.remove(plan.jobId) }
+                    mutex.withLock { workerJobs.remove(plan.jobId); activePlans.remove(plan.jobId) }
                 }
             }
         } finally {
@@ -161,6 +196,17 @@ class RenderQueue(
             }
         }
     }
+
+    private suspend fun persist(jobId: RenderJobId) {
+        val persistence = store ?: return
+        val snapshot = mutableJobs.value.firstOrNull { it.jobId == jobId } ?: return
+        val plan = plans.firstOrNull { it.jobId == jobId }
+            ?: activePlans[jobId]
+            ?: return
+        persistence.save(StoredRenderJob(plan, snapshot))
+    }
+
+    private val activePlans = mutableMapOf<RenderJobId, RenderPlan>()
 
     private fun update(jobId: RenderJobId, transform: (RenderJobSnapshot) -> RenderJobSnapshot) {
         mutableJobs.value = mutableJobs.value.map { if (it.jobId == jobId) transform(it) else it }
