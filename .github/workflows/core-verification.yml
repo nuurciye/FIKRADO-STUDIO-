@@ -9,8 +9,6 @@ on:
       - "core/**"
       - "app/**"
       - "media/**"
-      - "app/**"
-      - "media/**"
       - "gradle/**"
       - "gradlew"
       - "gradlew.bat"
@@ -21,6 +19,8 @@ on:
   pull_request:
     paths:
       - "core/**"
+      - "app/**"
+      - "media/**"
       - "gradle/**"
       - "gradlew"
       - "settings.gradle*"
@@ -37,7 +37,7 @@ concurrency:
 
 jobs:
   core-tests:
-    name: Core JVM tests
+    name: Core JVM tests and Android app compile
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
