@@ -37,8 +37,17 @@ object ProductionSceneTimeline {
         val originalByAsset = scene.layers.groupBy { it.assetId?.value }
         val assetById = assets.associateBy { it.id.value }
         val layers = timeline.clips.mapIndexed { index, clip ->
+            val sourceTemplates = originalByAsset[clip.sourceId].orEmpty()
+            val matchingSourceRange = sourceTemplates.firstOrNull { candidate ->
+                val candidateIn = candidate.properties[SOURCE_IN_KEY]?.toLongOrNull() ?: 0L
+                val candidateOut = candidate.properties[SOURCE_OUT_KEY]?.toLongOrNull()
+                    ?: assetById[clip.sourceId]?.durationMs
+                    ?: (candidateIn + candidate.durationMs)
+                candidateIn == clip.startMs && candidateOut == clip.endMs
+            }
             val template = originalById[clip.id]
-                ?: originalByAsset[clip.sourceId]?.firstOrNull()
+                ?: matchingSourceRange
+                ?: sourceTemplates.firstOrNull()
                 ?: error("No production layer template for clip ${clip.id}")
             val asset = assetById[clip.sourceId]
             val sourceEnd = clip.endMs ?: asset?.durationMs ?: (clip.startMs + clip.lengthMs)
