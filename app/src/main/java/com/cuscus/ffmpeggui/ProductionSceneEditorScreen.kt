@@ -292,7 +292,8 @@ private fun TrackClipRow(
     val color = trackColor(kind)
     val total = sceneDurationMs.coerceAtLeast(1L).toFloat()
     val startFraction = (startMs / total).coerceIn(0f, 1f)
-    val availableFraction = (1f - startFraction).coerceAtLeast(0.005f)\n    val durationFraction = (durationMs / total).coerceAtLeast(0.005f).coerceAtMost(availableFraction)
+    val availableFraction = (1f - startFraction).coerceAtLeast(0.005f)
+    val durationFraction = (durationMs / total).coerceAtLeast(0.005f).coerceAtMost(availableFraction)
     Column(
         Modifier.fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
