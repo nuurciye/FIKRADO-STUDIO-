@@ -128,6 +128,8 @@ fun HomeScreen(
     onCompress: () -> Unit = {},
     /** Opens the AI check: a picture's, a sound's or a video's AI marks read (the file is picked first). */
     onCheckAi: () -> Unit = {},
+    /** Opens the separate production-project workspace. */
+    onOpenProductionStudio: () -> Unit = {},
     /** Opens the SVG at this URI in the SVG editor. */
     onEditSvg: (Uri) -> Unit = {},
     /** Opens the SVG editor on an empty drawing. */
@@ -304,6 +306,17 @@ fun HomeScreen(
         )
         Spacer(modifier = Modifier.height(12.dp))
         AiCheckTile(onClick = onCheckAi, height = if (short) 72.dp else 88.dp)
+        Spacer(modifier = Modifier.height(12.dp))
+        Button(
+            onClick = onOpenProductionStudio,
+            shapes = ButtonDefaults.shapes(),
+            colors = ButtonDefaults.filledTonalButtonColors(),
+            modifier = Modifier.fillMaxWidth().height(if (short) 64.dp else 76.dp),
+        ) {
+            Icon(imageVector = Icons.Rounded.AutoAwesome, contentDescription = null, modifier = Modifier.size(24.dp))
+            Spacer(modifier = Modifier.width(12.dp))
+            Text("Production Studio", style = MaterialTheme.typography.titleMediumEmphasized)
+        }
 
         AnimatedVisibility(visible = noCamera, enter = expandVertically() + fadeIn()) {
             Text(
