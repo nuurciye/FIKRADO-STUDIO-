@@ -11,6 +11,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
+import java.nio.file.Files
 
 class RenderQueueTest {
     private class QueueAdapter(
@@ -130,4 +131,47 @@ class RenderQueueTest {
             scope.cancel()
         }
     } }
+    @Test fun queuePersistsEnqueuedAndCompletedJobs() { runBlocking {
+        val directory = Files.createTempDirectory("fikrado-queue-persistence").toFile()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            val store = JsonFileRenderJobStore(directory)
+            val queue = RenderQueue(scope, RenderOrchestrator(EngineRegistry(listOf(QueueAdapter()))), store)
+            queue.enqueue(plan("persisted"))
+            queue.jobs.first { it.singleOrNull()?.status == RenderJobStatus.SUCCEEDED }
+
+            val restored = store.loadAll().single()
+            assertEquals(RenderJobStatus.SUCCEEDED, restored.snapshot.status)
+            assertEquals("output://persisted.mp4", restored.snapshot.outputUri)
+            assertEquals("persisted", restored.plan.jobId.value)
+        } finally {
+            scope.cancel()
+            directory.deleteRecursively()
+        }
+    } }
+
+    @Test fun restoreRequeuesJobsInterruptedWhileRunning() { runBlocking {
+        val directory = Files.createTempDirectory("fikrado-queue-recovery").toFile()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            val store = JsonFileRenderJobStore(directory)
+            val interrupted = plan("interrupted")
+            store.save(StoredRenderJob(
+                interrupted,
+                RenderJobSnapshot(interrupted.jobId, RenderJobStatus.RUNNING, interrupted.engineId, EngineProgress(0.6f))
+            ))
+            val queue = RenderQueue(scope, RenderOrchestrator(EngineRegistry(listOf(QueueAdapter()))), store)
+            queue.restore()
+
+            val completed = queue.jobs.first { jobs ->
+                jobs.singleOrNull()?.status == RenderJobStatus.SUCCEEDED
+            }
+            assertEquals(RenderJobStatus.SUCCEEDED, completed.single().status)
+            assertEquals(RenderJobStatus.SUCCEEDED, store.loadAll().single().snapshot.status)
+        } finally {
+            scope.cancel()
+            directory.deleteRecursively()
+        }
+    } }
+
 }
