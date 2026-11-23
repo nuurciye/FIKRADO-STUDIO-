@@ -51,7 +51,7 @@ class FfmpegProductionAdapter(
     override val id: EngineId = ENGINE_ID
 
     override fun capabilities(): EngineCapabilities = EngineCapabilities(
-        supportedLayerKinds = setOf(com.cuscus.ffmpeggui.core.production.model.LayerKind.VIDEO),
+        supportedLayerKinds = setOf(com.cuscus.ffmpeggui.core.production.model.LayerKind.VIDEO, com.cuscus.ffmpeggui.core.production.model.LayerKind.AUDIO),
         supportedCodecs = setOf("h264", "aac"),
         supportsAlpha = false,
         supportsAudio = true,
@@ -72,7 +72,7 @@ class FfmpegProductionAdapter(
             return listOf(RenderIssue("empty_scene", "scenes[${scene.id.value}].layers", "The selected scene has no layers."))
         }
         val unsupported = scene.layers.filter {
-            it.kind != com.cuscus.ffmpeggui.core.production.model.LayerKind.VIDEO
+            it.kind != com.cuscus.ffmpeggui.core.production.model.LayerKind.VIDEO && it.kind != com.cuscus.ffmpeggui.core.production.model.LayerKind.AUDIO
         }
         if (unsupported.isNotEmpty()) {
             return unsupported.map { layer ->
