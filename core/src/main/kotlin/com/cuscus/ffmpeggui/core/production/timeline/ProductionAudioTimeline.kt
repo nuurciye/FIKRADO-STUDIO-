@@ -98,7 +98,8 @@ object ProductionAudioTimeline {
 
         // Pack clips independently inside each authored zIndex lane.
         val clips = mutableListOf<ProductionAudioClip>()
-        pending.groupBy { it.first.zIndex }.toSortedMap().forEach { (authoredLane, entries) ->
+        var laneOffset = 0
+        pending.groupBy { it.first.zIndex }.toSortedMap().forEach { (_, entries) ->
             val spans = entries.map { it.second }
             val rows = SoundSpan.rows(spans)
             entries.forEachIndexed { index, (layer, span) ->
@@ -106,9 +107,10 @@ object ProductionAudioTimeline {
                     layerId = layer.id.value,
                     assetId = requireNotNull(layer.assetId).value,
                     span = span,
-                    lane = authoredLane + rows[index],
+                    lane = laneOffset + rows[index],
                 )
             }
+            laneOffset += (rows.maxOrNull() ?: -1) + 1
         }
         return ProductionAudioTimelineResult(clips.sortedWith(compareBy({ it.lane }, { it.span.startMs }, { it.layerId })))
     }
