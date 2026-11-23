@@ -45,6 +45,8 @@ import com.cuscus.ffmpeggui.speech.SmartFeatures
 import com.cuscus.ffmpeggui.subtitles.SubtitleFonts
 import com.cuscus.ffmpeggui.core.command.FontProvider
 import com.cuscus.ffmpeggui.production.AndroidFfmpegProductionJobFactory
+import com.cuscus.ffmpeggui.core.production.persistence.JsonFileProductionProjectRepository
+import com.cuscus.ffmpeggui.core.production.persistence.ProductionProjectRepository
 
 /**
  * Hand-written dependency graph.
@@ -183,6 +185,15 @@ class AppContainer(
     val glyphAtlas: com.cuscus.ffmpeggui.core.engine.GlyphAtlasSource by lazy { com.cuscus.ffmpeggui.media.AndroidGlyphAtlas() }
 
     val conversionEngine: ConversionEngine by lazy { engineInto(AppOutputDirectory(appContext)) }
+
+    /**
+     * Durable production projects, separate from the legacy editor's SavedProject store.
+     * The core repository owns JSON validation and atomic persistence; Android supplies
+     * only the app-private storage location.
+     */
+    val productionProjectRepository: ProductionProjectRepository by lazy {
+        JsonFileProductionProjectRepository(java.io.File(appContext.filesDir, "production-projects"))
+    }
 
     /**
      * Durable state for the newer production render queue. Kept separate from
