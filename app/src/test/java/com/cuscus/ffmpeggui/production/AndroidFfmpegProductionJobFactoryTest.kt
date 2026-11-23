@@ -96,4 +96,45 @@ class AndroidFfmpegProductionJobFactoryTest {
         )))
         assertEquals("unsupported_container", result.issues.single().code)
     }
+    @Test fun adapterPublishesCompletedFileToTheRequestedContentUri() = runBlocking {
+        var publishedSource: String? = null
+        var publishedDestination: String? = null
+        val adapter = FfmpegProductionAdapter(
+            runner = FfmpegProductionRunner { _, _ ->
+                ConversionOutcome.Success("/private/exports/render.mp4")
+            },
+            jobFactory = factory(),
+            outputPublisher = FfmpegProductionOutputPublisher { source, destination ->
+                publishedSource = source
+                publishedDestination = destination
+                destination
+            },
+        )
+
+        val result = adapter.render(request(), onProgress = {})
+
+        assertTrue(result.errorMessage.orEmpty(), result.success)
+        assertEquals("/private/exports/render.mp4", publishedSource)
+        assertEquals("content://output/1", publishedDestination)
+        assertEquals("content://output/1", result.outputUri)
+    }
+
+    @Test fun outputPublishingFailureIsReportedAsRenderFailure() = runBlocking {
+        val adapter = FfmpegProductionAdapter(
+            runner = FfmpegProductionRunner { _, _ ->
+                ConversionOutcome.Success("/private/exports/render.mp4")
+            },
+            jobFactory = factory(),
+            outputPublisher = FfmpegProductionOutputPublisher { _, _ ->
+                throw java.io.IOException("Destination is read-only.")
+            },
+        )
+
+        val result = adapter.render(request(), onProgress = {})
+
+        assertFalse(result.success)
+        assertEquals("output_publish_failed", result.errorCode)
+        assertEquals("Destination is read-only.", result.errorMessage)
+    }
+
 }
