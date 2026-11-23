@@ -101,7 +101,19 @@ class RenderQueue(
                     persist(jobId)
                     return true
                 }
-                RenderJobStatus.RUNNING -> worker = workerJobs[jobId]
+                RenderJobStatus.RUNNING -> {
+                    val candidate = workerJobs[jobId]
+                    if (candidate == null || !candidate.isActive) {
+                        // A LAZY worker can be cancelled after RUNNING is published
+                        // but before start() dispatches its body. In that state its
+                        // cancellation handler never runs, so publish CANCELLED here.
+                        candidate?.cancel()
+                        update(jobId) { it.copy(status = RenderJobStatus.CANCELLED) }
+                        persist(jobId)
+                        return true
+                    }
+                    worker = candidate
+                }
                 RenderJobStatus.SUCCEEDED,
                 RenderJobStatus.FAILED,
                 RenderJobStatus.CANCELLED -> return false
