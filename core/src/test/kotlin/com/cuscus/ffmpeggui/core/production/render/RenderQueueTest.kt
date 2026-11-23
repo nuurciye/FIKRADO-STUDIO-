@@ -49,7 +49,7 @@ class RenderQueueTest {
         RenderOutputSpec(1280, 720, 30, 1, "mp4", "h264", outputUri = "output://$id.mp4"),
     )
 
-    @Test fun queueExecutesJobsSequentiallyAndPublishesSuccess() { runBlocking {
+    @Test(timeout = 20_000) fun queueExecutesJobsSequentiallyAndPublishesSuccess() { runBlocking {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         try {
             val adapter = QueueAdapter()
@@ -69,7 +69,7 @@ class RenderQueueTest {
         }
     } }
 
-    @Test fun queueRejectsDuplicateJobIds() { runBlocking {
+    @Test(timeout = 20_000) fun queueRejectsDuplicateJobIds() { runBlocking {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         try {
             val queue = RenderQueue(scope, RenderOrchestrator(EngineRegistry(listOf(QueueAdapter()))))
@@ -85,7 +85,7 @@ class RenderQueueTest {
         }
     } }
 
-    @Test fun queuedJobCanBeCancelledBeforeExecution() { runBlocking {
+    @Test(timeout = 20_000) fun queuedJobCanBeCancelledBeforeExecution() { runBlocking {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         try {
             val gate = CompletableDeferred<Unit>()
@@ -104,7 +104,7 @@ class RenderQueueTest {
         }
     } }
 
-    @Test fun runningJobCancellationIsObservable() { runBlocking {
+    @Test(timeout = 20_000) fun runningJobCancellationIsObservable() { runBlocking {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         try {
             val gate = CompletableDeferred<Unit>()
@@ -119,7 +119,7 @@ class RenderQueueTest {
         }
     } }
 
-    @Test fun unknownAndTerminalJobsCannotBeCancelled() { runBlocking {
+    @Test(timeout = 20_000) fun unknownAndTerminalJobsCannotBeCancelled() { runBlocking {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         try {
             val queue = RenderQueue(scope, RenderOrchestrator(EngineRegistry(listOf(QueueAdapter()))))
@@ -131,7 +131,7 @@ class RenderQueueTest {
             scope.cancel()
         }
     } }
-    @Test fun queuePersistsEnqueuedAndCompletedJobs() { runBlocking {
+    @Test(timeout = 20_000) fun queuePersistsEnqueuedAndCompletedJobs() { runBlocking {
         val directory = Files.createTempDirectory("fikrado-queue-persistence").toFile()
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         try {
@@ -150,7 +150,7 @@ class RenderQueueTest {
         }
     } }
 
-    @Test fun restoreRequeuesJobsInterruptedWhileRunning() { runBlocking {
+    @Test(timeout = 20_000) fun restoreRequeuesJobsInterruptedWhileRunning() { runBlocking {
         val directory = Files.createTempDirectory("fikrado-queue-recovery").toFile()
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         try {
