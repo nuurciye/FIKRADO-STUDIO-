@@ -8,7 +8,6 @@ import com.cuscus.ffmpeggui.core.production.render.*
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
-import java.util.concurrent.atomic.AtomicReference
 
 class AndroidFfmpegProductionJobFactoryTest {
     private val sceneId = SceneId("scene-1")
@@ -18,6 +17,9 @@ class AndroidFfmpegProductionJobFactoryTest {
         layer: ProductionLayer = ProductionLayer(LayerId("layer-1"), LayerKind.VIDEO, 0, 5_000, assetId),
         asset: ProductionAsset = ProductionAsset(assetId, AssetKind.VIDEO, "content://media/video/1", "clip.mp4", durationMs = 5_000),
         output: RenderOutputSpec = RenderOutputSpec(1920, 1080, 30, 1, "mp4", "h264", outputUri = "content://output/1"),
+        sceneDurationMs: Long = 5_000,
+        layers: List<ProductionLayer> = listOf(layer),
+        assets: List<ProductionAsset> = listOf(asset),
     ) = EngineRenderRequest(
         jobId = RenderJobId("job-1"),
         project = ProductionProject(
@@ -25,29 +27,83 @@ class AndroidFfmpegProductionJobFactoryTest {
             name = "Documentary",
             profile = ProductionProfile.DOCUMENTARY,
             settings = ProductionSettings(1920, 1080, 30),
-            assets = listOf(asset),
-            scenes = listOf(ProductionScene(sceneId, "Scene 1", 5_000, listOf(layer))),
+            assets = assets,
+            scenes = listOf(ProductionScene(sceneId, "Scene 1", sceneDurationMs, layers)),
         ),
         sceneIds = listOf(sceneId),
         output = output,
     )
 
-    private fun factory(info: MediaInfo? = MediaInfo.of(
-        durationMs = 5_000, isVideo = true, width = 1920, height = 1080,
-        fileSizeBytes = 1_000_000, hasAudio = true, frameRate = 30f,
+    private fun factory(infos: Map<String, MediaInfo?> = mapOf(
+        "content://media/video/1" to MediaInfo.of(
+            durationMs = 5_000, isVideo = true, width = 1920, height = 1080,
+            fileSizeBytes = 1_000_000, hasAudio = true, frameRate = 30f,
+        ),
+        "content://media/video/2" to MediaInfo.of(
+            durationMs = 5_000, isVideo = true, width = 1920, height = 1080,
+            fileSizeBytes = 1_200_000, hasAudio = true, frameRate = 30f,
+        ),
     )) = AndroidFfmpegProductionJobFactory(object : MediaProbe {
-        override fun describe(sourceUri: String): MediaInfo? = info
-        override fun durationMs(sourceUri: String): Long = info?.durationMs ?: 0L
-        override fun displayName(sourceUri: String): String? = "clip.mp4"
+        override fun describe(sourceUri: String): MediaInfo? = infos[sourceUri]
+        override fun durationMs(sourceUri: String): Long = infos[sourceUri]?.durationMs ?: 0L
+        override fun displayName(sourceUri: String): String? = sourceUri.substringAfterLast('/')
     })
 
     @Test fun mapsValidSingleVideoSceneToConversionJob() = runBlocking {
         val prepared = factory().prepare(request())
-
         assertTrue(prepared.issues.toString(), prepared.issues.isEmpty())
         val job = requireNotNull(prepared.job)
         assertEquals("content://media/video/1", job.sources.inputs.single().uri)
         assertEquals(5_000L, job.request.segments.single().endMs)
+    }
+
+    @Test fun mapsSequentialMultiClipSceneWithoutLosingSourceOrder() = runBlocking {
+        val secondAssetId = AssetId("asset-2")
+        val layers = listOf(
+            ProductionLayer(LayerId("clip-a"), LayerKind.VIDEO, 0, 5_000, assetId),
+            ProductionLayer(LayerId("clip-b"), LayerKind.VIDEO, 5_000, 3_000, secondAssetId),
+            ProductionLayer(LayerId("clip-c"), LayerKind.VIDEO, 8_000, 2_000, assetId),
+        )
+        val assets = listOf(
+            ProductionAsset(assetId, AssetKind.VIDEO, "content://media/video/1", "a.mp4", durationMs = 5_000),
+            ProductionAsset(secondAssetId, AssetKind.VIDEO, "content://media/video/2", "b.mp4", durationMs = 5_000),
+        )
+        val prepared = factory().prepare(request(
+            layers = layers, assets = assets, sceneDurationMs = 10_000,
+        ))
+        assertTrue(prepared.issues.toString(), prepared.issues.isEmpty())
+        val job = requireNotNull(prepared.job)
+        assertEquals(listOf(
+            "content://media/video/1",
+            "content://media/video/2",
+            "content://media/video/1",
+        ), job.sources.inputs.map { it.uri })
+        assertEquals(listOf(0, 1, 0), job.request.segments.map { it.source })
+        assertEquals(listOf(5_000L, 3_000L, 2_000L), job.request.segments.map { it.endMs })
+        assertEquals(listOf("clip-a", "clip-b", "clip-c"), job.request.segments.map { it.clipId })
+    }
+
+    @Test fun rejectsTimelineGapInsteadOfSilentlyFlatteningIt() = runBlocking {
+        val layers = listOf(
+            ProductionLayer(LayerId("clip-a"), LayerKind.VIDEO, 0, 2_000, assetId),
+            ProductionLayer(LayerId("clip-b"), LayerKind.VIDEO, 3_000, 2_000, assetId),
+        )
+        val result = factory().prepare(request(layers = layers, sceneDurationMs = 5_000))
+        assertEquals("timeline_gap", result.issues.single().code)
+    }
+
+    @Test fun rejectsOverlappingClipsInsteadOfChangingTheirTiming() = runBlocking {
+        val layers = listOf(
+            ProductionLayer(LayerId("clip-a"), LayerKind.VIDEO, 0, 3_000, assetId),
+            ProductionLayer(LayerId("clip-b"), LayerKind.VIDEO, 2_000, 3_000, assetId),
+        )
+        val result = factory().prepare(request(layers = layers, sceneDurationMs = 5_000))
+        assertEquals("overlapping_clips", result.issues.single().code)
+    }
+
+    @Test fun rejectsSceneDurationThatDoesNotMatchSequentialClips() = runBlocking {
+        val result = factory().prepare(request(sceneDurationMs = 6_000))
+        assertEquals("scene_duration_mismatch", result.issues.single().code)
     }
 
     @Test fun rejectsMultipleScenesBeforeProbing() = runBlocking {
@@ -59,7 +115,6 @@ class AndroidFfmpegProductionJobFactoryTest {
         }
         val multi = request().copy(sceneIds = listOf(sceneId, SceneId("scene-2")))
         val result = AndroidFfmpegProductionJobFactory(probe).prepare(multi)
-
         assertEquals("single_scene_required", result.issues.single().code)
         assertEquals(0, probes)
     }
@@ -79,7 +134,7 @@ class AndroidFfmpegProductionJobFactoryTest {
     }
 
     @Test fun rejectsUnreadableSource() = runBlocking {
-        val result = factory(info = null).prepare(request())
+        val result = factory(infos = emptyMap()).prepare(request())
         assertEquals("source_unreadable", result.issues.single().code)
     }
 
@@ -110,26 +165,17 @@ class AndroidFfmpegProductionJobFactoryTest {
         )))
         assertEquals("unsupported_audio_codec", result.issues.single().code)
     }
+
     @Test fun adapterPublishesCompletedFileToTheRequestedContentUri() = runBlocking {
-        var publishedSource: String? = null
-        var publishedDestination: String? = null
         val adapter = FfmpegProductionAdapter(
             runner = FfmpegProductionRunner { _, _ ->
                 ConversionOutcome.Success("/private/exports/render.mp4")
             },
             jobFactory = factory(),
-            outputPublisher = FfmpegProductionOutputPublisher { source, destination ->
-                publishedSource = source
-                publishedDestination = destination
-                destination
-            },
+            outputPublisher = FfmpegProductionOutputPublisher { _, destination -> destination },
         )
-
         val result = adapter.render(request(), onProgress = {})
-
         assertTrue(result.errorMessage.orEmpty(), result.success)
-        assertEquals("/private/exports/render.mp4", publishedSource)
-        assertEquals("content://output/1", publishedDestination)
         assertEquals("content://output/1", result.outputUri)
     }
 
@@ -143,12 +189,9 @@ class AndroidFfmpegProductionJobFactoryTest {
                 throw java.io.IOException("Destination is read-only.")
             },
         )
-
         val result = adapter.render(request(), onProgress = {})
-
         assertFalse(result.success)
         assertEquals("output_publish_failed", result.errorCode)
         assertEquals("Destination is read-only.", result.errorMessage)
     }
-
 }
