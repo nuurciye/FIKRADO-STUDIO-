@@ -166,6 +166,14 @@ class AndroidFfmpegProductionJobFactory(
             val info = try { mediaProbe.describe(asset.uri) } catch (_: Exception) { null }
                 ?: return issue("audio_source_unreadable", "assets[${asset.id.value}].uri", "Android could not read or probe this audio URI.")
             if (!info.hasAudio) return issue("invalid_audio_source", "assets[${asset.id.value}]", "The selected asset has no readable audio stream.")
+            val availableAudioDuration = minOf(
+                asset.durationMs ?: Long.MAX_VALUE,
+                info.durationMs.takeIf { it > 0L } ?: Long.MAX_VALUE,
+            )
+            if (clip.span.trimEndMs > availableAudioDuration) return issue(
+                "audio_range_exceeds_source", "scenes[${scene.id.value}].layers[${clip.layerId}]",
+                "Audio trim range exceeds the probed source duration."
+            )
             sounds += NamedSource(asset.uri, asset.displayName.ifBlank { "audio-${sounds.size + 1}.mp3" })
             PlacedSound(startMs = clip.span.startMs, trimStartMs = clip.span.trimStartMs, trimEndMs = clip.span.trimEndMs, speed = clip.span.rate, repeats = clip.span.loops)
         }
