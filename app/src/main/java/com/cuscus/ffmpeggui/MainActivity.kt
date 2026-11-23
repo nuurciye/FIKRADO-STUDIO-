@@ -730,7 +730,21 @@ class MainActivity : ComponentActivity() {
                                             }
                                             val scene = current.scenes.firstOrNull()
                                             val sceneId = scene?.id ?: com.cuscus.ffmpeggui.core.production.model.SceneId(java.util.UUID.randomUUID().toString())
-                                            val start = scene?.durationMs ?: 0L
+                                            // Independent media lanes: video clips append to the video track;
+                                            // audio and image assets start at the scene origin on their own tracks.
+                                            val start = when (layerKind) {
+                                                com.cuscus.ffmpeggui.core.production.model.LayerKind.VIDEO ->
+                                                    scene?.layers?.filter { it.kind == com.cuscus.ffmpeggui.core.production.model.LayerKind.VIDEO }
+                                                        ?.maxOfOrNull { it.startMs + it.durationMs } ?: 0L
+                                                com.cuscus.ffmpeggui.core.production.model.LayerKind.AUDIO,
+                                                com.cuscus.ffmpeggui.core.production.model.LayerKind.IMAGE -> 0L
+                                                else -> scene?.durationMs ?: 0L
+                                            }
+                                            val lane = when (layerKind) {
+                                                com.cuscus.ffmpeggui.core.production.model.LayerKind.AUDIO -> -1
+                                                com.cuscus.ffmpeggui.core.production.model.LayerKind.IMAGE -> 1
+                                                else -> 0
+                                            }
                                             val asset = com.cuscus.ffmpeggui.core.production.model.ProductionAsset(
                                                 id = assetId, kind = kind, uri = uri.toString(),
                                                 displayName = displayName, mimeType = mime, durationMs = duration,
@@ -738,12 +752,20 @@ class MainActivity : ComponentActivity() {
                                             val layer = com.cuscus.ffmpeggui.core.production.model.ProductionLayer(
                                                 id = com.cuscus.ffmpeggui.core.production.model.LayerId(java.util.UUID.randomUUID().toString()),
                                                 kind = layerKind, startMs = start, durationMs = duration, assetId = assetId,
+                                                zIndex = lane,
+                                                properties = if (kind == com.cuscus.ffmpeggui.core.production.model.AssetKind.AUDIO) mapOf(
+                                                    com.cuscus.ffmpeggui.core.production.timeline.ProductionSceneTimeline.SOURCE_IN_KEY to "0",
+                                                    com.cuscus.ffmpeggui.core.production.timeline.ProductionSceneTimeline.SOURCE_OUT_KEY to duration.toString(),
+                                                ) else emptyMap(),
                                             )
                                             val updatedScene = if (scene == null) {
                                                 com.cuscus.ffmpeggui.core.production.model.ProductionScene(
                                                     id = sceneId, name = "Scene 1", durationMs = duration, layers = listOf(layer),
                                                 )
-                                            } else scene.copy(durationMs = start + duration, layers = scene.layers + layer)
+                                            } else scene.copy(
+                                                durationMs = maxOf(scene.durationMs, start + duration),
+                                                layers = scene.layers + layer,
+                                            )
                                             val updated = current.copy(
                                                 assets = current.assets + asset,
                                                 scenes = if (scene == null) listOf(updatedScene) else current.scenes.map {
