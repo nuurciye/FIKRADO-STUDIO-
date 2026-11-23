@@ -7,6 +7,10 @@ on:
       - master
     paths:
       - "core/**"
+      - "app/**"
+      - "media/**"
+      - "app/**"
+      - "media/**"
       - "gradle/**"
       - "gradlew"
       - "gradlew.bat"
@@ -51,3 +55,6 @@ jobs:
 
       - name: Run core tests
         run: ./gradlew :core:test --no-daemon --stacktrace
+
+      - name: Compile Android app Kotlin
+        run: ./gradlew :app:compileDebugKotlin --no-daemon --stacktrace
