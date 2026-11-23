@@ -164,8 +164,10 @@ class RenderQueue(
                                     )
                                 }
                             }
+                            // Persist the terminal snapshot before publishing it as observable.
+                            // Collectors must never see SUCCEEDED/FAILED while disk still says RUNNING.
+                            persist(plan.jobId)
                         }
-                        mutex.withLock { persist(plan.jobId) }
                     } catch (cancelled: CancellationException) {
                         withContext(NonCancellable) {
                             mutex.withLock {
