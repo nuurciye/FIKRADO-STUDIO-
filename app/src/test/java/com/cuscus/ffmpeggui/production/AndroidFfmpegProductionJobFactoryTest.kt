@@ -73,10 +73,10 @@ class AndroidFfmpegProductionJobFactoryTest {
         ))
         assertTrue(prepared.issues.toString(), prepared.issues.isEmpty())
         val job = requireNotNull(prepared.job)
+        // Source table is de-duplicated; timeline order is represented by segment indices.
         assertEquals(listOf(
             "content://media/video/1",
             "content://media/video/2",
-            "content://media/video/1",
         ), job.sources.inputs.map { it.uri })
         assertEquals(listOf(0, 1, 0), job.request.segments.map { it.source })
         assertEquals(listOf(5_000L, 3_000L, 2_000L), job.request.segments.map { it.endMs })
