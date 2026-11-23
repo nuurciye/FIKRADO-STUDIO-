@@ -39,7 +39,7 @@ jobs:
   core-tests:
     name: Core JVM tests and Android app compile
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -53,7 +53,10 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Run core tests
+      - name: Run render queue regression tests
+        run: ./gradlew :core:test --tests '*RenderQueueTest' --no-daemon --stacktrace
+
+      - name: Run full core tests
         run: ./gradlew :core:test --no-daemon --stacktrace
 
       - name: Fetch pinned FFmpeg runtime
