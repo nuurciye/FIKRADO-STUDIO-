@@ -56,5 +56,8 @@ jobs:
       - name: Run core tests
         run: ./gradlew :core:test --no-daemon --stacktrace
 
+      - name: Fetch pinned FFmpeg runtime
+        run: bash scripts/fetch-ffmpeg-kit-next.sh
+
       - name: Compile Android app Kotlin
         run: ./gradlew :app:compileDebugKotlin --no-daemon --stacktrace
