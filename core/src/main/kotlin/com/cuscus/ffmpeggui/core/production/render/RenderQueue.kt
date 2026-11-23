@@ -27,10 +27,10 @@ data class RenderJobSnapshot(
 )
 
 /**
- * In-memory render queue with one active worker.
+ * Single-worker render queue with observable and optionally durable state.
  *
- * The host owns the CoroutineScope and its lifecycle. Queue state is observable
- * but intentionally not persisted; durable recovery belongs to a future store.
+ * Supply a RenderJobStore to persist plans and snapshots. Call restore() once
+ * before accepting new work; interrupted RUNNING jobs are safely re-queued.
  */
 class RenderQueue(
     private val scope: CoroutineScope,
