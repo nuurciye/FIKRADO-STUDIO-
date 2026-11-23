@@ -1,10 +1,5 @@
 package com.cuscus.ffmpeggui
 
-import android.content.ContentResolver
-import android.media.MediaMetadataRetriever
-import android.provider.OpenableColumns
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -22,20 +17,29 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.cuscus.ffmpeggui.core.production.model.ProductionProject
-import com.cuscus.ffmpeggui.core.production.model.ProductionScene
+import com.cuscus.ffmpeggui.core.production.timeline.ProductionSceneTimeline
 
 @Composable
 fun ProductionSceneEditorScreen(
     project: ProductionProject,
+    onProjectChanged: (ProductionProject) -> Unit,
     onAddMedia: () -> Unit,
     onBack: () -> Unit,
 ) {
     val scene = project.scenes.firstOrNull()
+    fun updateScene(updated: com.cuscus.ffmpeggui.core.production.model.ProductionScene) {
+        val currentScene = scene ?: return
+        onProjectChanged(
+            project.copy(
+                scenes = project.scenes.map { if (it.id == currentScene.id) updated else it },
+                metadata = project.metadata.copy(modifiedAtEpochMs = System.currentTimeMillis()),
+            ),
+        )
+    }
+
     Column(
         modifier = Modifier.fillMaxSize().padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -72,20 +76,69 @@ fun ProductionSceneEditorScreen(
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(scene.layers, key = { it.id.value }) { layer ->
                     val asset = project.assets.firstOrNull { it.id == layer.assetId }
+                    val sourceIn = layer.properties[ProductionSceneTimeline.SOURCE_IN_KEY]?.toLongOrNull() ?: 0L
+                    val sourceOut = layer.properties[ProductionSceneTimeline.SOURCE_OUT_KEY]?.toLongOrNull()
+                        ?: asset?.durationMs ?: (sourceIn + layer.durationMs)
                     Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(asset?.displayName ?: "Missing media", style = MaterialTheme.typography.titleMedium)
                             Text(
-                                "${layer.kind.name}  •  ${layer.startMs / 1000.0}s → ${(layer.startMs + layer.durationMs) / 1000.0}s",
+                                "${layer.kind.name}  •  Timeline ${layer.startMs / 1000.0}s  •  Source ${sourceIn / 1000.0}–${sourceOut / 1000.0}s",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                OutlinedButton(
+                                    onClick = {
+                                        val at = layer.startMs + layer.durationMs / 2L
+                                        if (layer.durationMs >= 200L) updateScene(
+                                            ProductionSceneTimeline.split(scene, project.assets, at, java.util.UUID.randomUUID().toString()),
+                                        )
+                                    },
+                                    enabled = layer.durationMs >= 200L,
+                                ) { Text("Split") }
+                                OutlinedButton(
+                                    onClick = { updateScene(ProductionSceneTimeline.move(scene, project.assets, layer.id.value, -1)) },
+                                    enabled = scene.layers.indexOfFirst { it.id == layer.id } > 0,
+                                ) { Text("←") }
+                                OutlinedButton(
+                                    onClick = { updateScene(ProductionSceneTimeline.move(scene, project.assets, layer.id.value, 1)) },
+                                    enabled = scene.layers.indexOfFirst { it.id == layer.id } < scene.layers.lastIndex,
+                                ) { Text("→") }
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                TextButton(
+                                    onClick = {
+                                        updateScene(ProductionSceneTimeline.trimEnd(scene, project.assets, layer.id.value, sourceOut - 1_000L))
+                                    },
+                                    enabled = layer.durationMs > 1_100L,
+                                ) { Text("Trim −1s") }
+                                TextButton(
+                                    onClick = {
+                                        updateScene(ProductionSceneTimeline.trimEnd(scene, project.assets, layer.id.value, sourceOut + 1_000L))
+                                    },
+                                    enabled = asset?.durationMs?.let { sourceOut < it } == true,
+                                ) { Text("Extend +1s") }
+                                TextButton(
+                                    onClick = {
+                                        updateScene(ProductionSceneTimeline.duplicate(scene, project.assets, layer.id.value, java.util.UUID.randomUUID().toString()))
+                                    },
+                                ) { Text("Duplicate") }
+                                TextButton(
+                                    onClick = { updateScene(ProductionSceneTimeline.remove(scene, project.assets, layer.id.value)) },
+                                    enabled = scene.layers.size > 1,
+                                ) { Text("Remove") }
+                            }
                         }
                     }
                 }
             }
         }
         Spacer(Modifier.height(2.dp))
-        Text("MVP note: clips are currently arranged sequentially. Trimming, transitions, overlays and multi-track editing are planned for later milestones.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            "Sequential editing is enabled: split, trim, reorder, duplicate and remove clips. Multi-track compositing and live preview are the next milestones.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
