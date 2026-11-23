@@ -17,6 +17,7 @@ import com.cuscus.ffmpeggui.core.model.SourceInfo
 import com.cuscus.ffmpeggui.core.production.model.AssetKind
 import com.cuscus.ffmpeggui.core.production.model.LayerKind
 import com.cuscus.ffmpeggui.core.production.model.LayerTransform
+import com.cuscus.ffmpeggui.core.production.timeline.ProductionSceneTimeline
 import com.cuscus.ffmpeggui.core.production.render.EngineRenderRequest
 import com.cuscus.ffmpeggui.core.production.render.FfmpegJobPreparation
 import com.cuscus.ffmpeggui.core.production.render.FfmpegProductionJobFactory
@@ -98,9 +99,20 @@ class AndroidFfmpegProductionJobFactory(
                 asset.durationMs ?: Long.MAX_VALUE,
                 info.durationMs.takeIf { it > 0 } ?: Long.MAX_VALUE,
             )
-            if (layer.durationMs > availableDuration) return issue(
-                "clip_exceeds_source", "$path.durationMs",
-                "Clip duration exceeds the readable source duration."
+            val sourceStartMs = layer.properties[ProductionSceneTimeline.SOURCE_IN_KEY]?.toLongOrNull() ?: 0L
+            val sourceEndMs = layer.properties[ProductionSceneTimeline.SOURCE_OUT_KEY]?.toLongOrNull()
+                ?: (sourceStartMs + layer.durationMs)
+            if (sourceStartMs < 0L || sourceEndMs <= sourceStartMs) return issue(
+                "invalid_source_range", "$path.properties",
+                "Source trim range must have a non-negative start and an end after the start."
+            )
+            if (sourceEndMs > availableDuration) return issue(
+                "clip_exceeds_source", "$path.properties.${ProductionSceneTimeline.SOURCE_OUT_KEY}",
+                "Clip source range exceeds the readable source duration."
+            )
+            if (sourceEndMs - sourceStartMs != layer.durationMs) return issue(
+                "source_range_duration_mismatch", "$path.durationMs",
+                "Clip duration must equal its source out-point minus its source in-point."
             )
 
             val displayName = asset.displayName.ifBlank {
@@ -124,7 +136,12 @@ class AndroidFfmpegProductionJobFactory(
                     sources.lastIndex
                 }
             }
-            segments += Segment(source = sourceIndex, startMs = 0L, endMs = layer.durationMs, clipId = layer.id.value)
+            segments += Segment(
+                source = sourceIndex,
+                startMs = sourceStartMs,
+                endMs = sourceEndMs,
+                clipId = layer.id.value,
+            )
             timelineCursor += layer.durationMs
         }
 
