@@ -83,7 +83,9 @@ class FfmpegProductionAdapter(
                 )
             }
         }
-        return jobFactory.prepare(request).issues
+        // Mapping may probe media and allocate/stage temporary resources.
+        // Keep validation side-effect free; prepare exactly once in render().
+        return emptyList()
     }
 
     override suspend fun render(
