@@ -25,6 +25,10 @@ fun interface FfmpegProductionJobFactory {
     suspend fun prepare(request: EngineRenderRequest): FfmpegJobPreparation
 }
 
+fun interface FfmpegProductionOutputPublisher {
+    suspend fun publish(localOutputPath: String, destinationUri: String): String
+}
+
 fun interface FfmpegProductionRunner {
     suspend fun run(
         job: ConversionJob,
@@ -42,6 +46,7 @@ fun interface FfmpegProductionRunner {
 class FfmpegProductionAdapter(
     private val runner: FfmpegProductionRunner,
     private val jobFactory: FfmpegProductionJobFactory,
+    private val outputPublisher: FfmpegProductionOutputPublisher = FfmpegProductionOutputPublisher { localPath, _ -> localPath },
 ) : EngineAdapter {
     override val id: EngineId = ENGINE_ID
 
@@ -101,10 +106,19 @@ class FfmpegProductionAdapter(
                 else -> Unit
             }
         }) {
-            is ConversionOutcome.Success -> EngineRenderResult(
-                success = true,
-                outputUri = outcome.outputPath,
-            )
+            is ConversionOutcome.Success -> try {
+                val publishedUri = outputPublisher.publish(outcome.outputPath, request.output.outputUri)
+                EngineRenderResult(success = true, outputUri = publishedUri)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                EngineRenderResult(
+                    success = false,
+                    errorCode = "output_publish_failed",
+                    errorMessage = e.message?.takeIf { it.isNotBlank() }
+                        ?: "The rendered file could not be copied to the selected destination.",
+                )
+            }
             is ConversionOutcome.Failure -> EngineRenderResult(
                 success = false,
                 errorCode = outcome.reason.name.lowercase(),
