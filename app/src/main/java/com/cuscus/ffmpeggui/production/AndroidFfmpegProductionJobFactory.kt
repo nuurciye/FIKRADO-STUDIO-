@@ -16,17 +16,19 @@ import com.cuscus.ffmpeggui.core.model.Segment
 import com.cuscus.ffmpeggui.core.model.SourceInfo
 import com.cuscus.ffmpeggui.core.production.model.AssetKind
 import com.cuscus.ffmpeggui.core.production.model.LayerKind
+import com.cuscus.ffmpeggui.core.production.model.LayerTransform
 import com.cuscus.ffmpeggui.core.production.render.EngineRenderRequest
 import com.cuscus.ffmpeggui.core.production.render.FfmpegJobPreparation
 import com.cuscus.ffmpeggui.core.production.render.FfmpegProductionJobFactory
 import com.cuscus.ffmpeggui.core.production.render.RenderIssue
 
 /**
- * Conservative Android bridge for the first real production render.
+ * Conservative Android bridge from a production scene to the existing FFmpeg pipeline.
  *
- * It intentionally accepts one full-frame video layer beginning at t=0.
- * Unsupported placement/timeline semantics are rejected rather than silently
- * discarded. URI staging remains the responsibility of ConversionEngine.
+ * The first mapper supports a single scene made of sequential, full-frame video
+ * clips. Gaps, overlaps, transforms, overlays and non-video layers are rejected
+ * instead of being silently flattened or discarded. URI staging remains the
+ * responsibility of ConversionEngine.
  */
 class AndroidFfmpegProductionJobFactory(
     private val mediaProbe: MediaProbe,
@@ -41,40 +43,100 @@ class AndroidFfmpegProductionJobFactory(
         )
         val scene = request.project.scenes.firstOrNull { it.id == request.sceneIds.single() }
             ?: return issue("unknown_scene", "sceneIds[0]", "The selected scene does not exist.")
-        if (scene.layers.size != 1) return issue(
-            "single_video_layer_required", "scenes[${scene.id.value}].layers",
-            "The first FFmpeg production render requires exactly one video layer."
+        if (scene.layers.isEmpty()) return issue(
+            "empty_scene", "scenes[${scene.id.value}].layers", "The selected scene has no clips."
         )
-        val layer = scene.layers.single()
-        if (layer.kind != LayerKind.VIDEO) return issue(
-            "video_layer_required", "layers[${layer.id.value}].kind", "Only VIDEO layers are supported."
+        if (scene.durationMs <= 0L) return issue(
+            "invalid_scene_duration", "scenes[${scene.id.value}].durationMs", "Scene duration must be positive."
         )
-        if (layer.startMs != 0L || layer.zIndex != 0 || layer.opacity != 1f ||
-            layer.transform != com.cuscus.ffmpeggui.core.production.model.LayerTransform()
-        ) return issue(
-            "unsupported_layer_transform", "layers[${layer.id.value}]",
-            "The first render supports a full-frame layer at time zero with default transform and opacity."
+
+        val orderedLayers = scene.layers.sortedWith(compareBy({ it.startMs }, { it.zIndex }))
+        val sources = mutableListOf<NamedSource>()
+        val sourceInfo = mutableListOf<SourceInfo>()
+        val segments = mutableListOf<Segment>()
+        var timelineCursor = 0L
+
+        orderedLayers.forEachIndexed { index, layer ->
+            val path = "scenes[${scene.id.value}].layers[${layer.id.value}]"
+            if (layer.kind != LayerKind.VIDEO) return issue(
+                "video_layer_required", "$path.kind", "Only VIDEO clips are supported in this sequential multi-clip MVP."
+            )
+            if (layer.startMs != timelineCursor) return issue(
+                if (layer.startMs < timelineCursor) "overlapping_clips" else "timeline_gap",
+                "$path.startMs",
+                "Sequential clips must start at $timelineCursor ms; found ${layer.startMs} ms."
+            )
+            if (layer.durationMs <= 0L) return issue(
+                "invalid_clip_duration", "$path.durationMs", "Clip duration must be positive."
+            )
+            if (layer.zIndex != 0 || layer.opacity != 1f || layer.transform != LayerTransform()) return issue(
+                "unsupported_layer_transform", path,
+                "Sequential clips must use the default full-frame transform, opacity 1, and z-index 0."
+            )
+            if (layer.startMs + layer.durationMs > scene.durationMs) return issue(
+                "clip_exceeds_scene", "$path.durationMs", "Clip extends beyond the selected scene duration."
+            )
+
+            val asset = request.project.assets.firstOrNull { it.id == layer.assetId }
+                ?: return issue("missing_video_asset", "$path.assetId", "The video clip asset is missing.")
+            if (asset.kind != AssetKind.VIDEO) return issue(
+                "asset_not_video", "assets[${asset.id.value}].kind", "The selected clip must reference a VIDEO asset."
+            )
+            if (asset.uri.isBlank()) return issue(
+                "empty_asset_uri", "assets[${asset.id.value}].uri", "The video asset URI is empty."
+            )
+            val info = try { mediaProbe.describe(asset.uri) } catch (_: Exception) { null }
+                ?: return issue(
+                    "source_unreadable", "assets[${asset.id.value}].uri",
+                    "Android could not read or probe this video URI."
+                )
+            if (!info.isVideo || info.width <= 0 || info.height <= 0) return issue(
+                "invalid_video_source", "assets[${asset.id.value}]",
+                "The selected asset is not a readable video."
+            )
+            val availableDuration = minOf(
+                asset.durationMs ?: Long.MAX_VALUE,
+                info.durationMs.takeIf { it > 0 } ?: Long.MAX_VALUE,
+            )
+            if (layer.durationMs > availableDuration) return issue(
+                "clip_exceeds_source", "$path.durationMs",
+                "Clip duration exceeds the readable source duration."
+            )
+
+            val displayName = asset.displayName.ifBlank {
+                request.project.name.ifBlank { "clip-${index + 1}.mp4" }
+            }
+            sources += NamedSource(asset.uri, displayName)
+            sourceInfo += SourceInfo(
+                durationMs = info.durationMs,
+                width = info.width,
+                height = info.height,
+                hasAudio = info.hasAudio,
+                isStill = false,
+                hdr = info.hdr,
+                frameRate = info.frameRate,
+                hasAlpha = info.hasAlpha,
+            )
+            segments += Segment(source = index, startMs = 0L, endMs = layer.durationMs, clipId = layer.id.value)
+            timelineCursor += layer.durationMs
+        }
+
+        if (timelineCursor != scene.durationMs) return issue(
+            "scene_duration_mismatch", "scenes[${scene.id.value}].durationMs",
+            "Sequential clips cover $timelineCursor ms, but the scene declares ${scene.durationMs} ms."
         )
-        val asset = request.project.assets.firstOrNull { it.id == layer.assetId }
-            ?: return issue("missing_video_asset", "layers[${layer.id.value}].assetId", "The video layer asset is missing.")
-        if (asset.kind != AssetKind.VIDEO) return issue(
-            "asset_not_video", "assets[${asset.id.value}].kind", "The selected layer must reference a VIDEO asset."
-        )
-        if (asset.uri.isBlank()) return issue("empty_asset_uri", "assets[${asset.id.value}].uri", "The video asset URI is empty.")
-        val info = try { mediaProbe.describe(asset.uri) } catch (_: Exception) { null }
-            ?: return issue("source_unreadable", "assets[${asset.id.value}].uri", "Android could not read or probe this video URI.")
-        if (!info.isVideo || info.width <= 0 || info.height <= 0) return issue(
-            "invalid_video_source", "assets[${asset.id.value}]", "The selected asset is not a readable video."
-        )
-        val duration = minOf(layer.durationMs, scene.durationMs, asset.durationMs ?: Long.MAX_VALUE, info.durationMs.takeIf { it > 0 } ?: Long.MAX_VALUE)
-        if (duration <= 0L) return issue("unknown_video_duration", "layers[${layer.id.value}].durationMs", "A positive video duration is required.")
+
+        val firstInfo = sourceInfo.first()
         val resolution = when (request.output.height) {
             240 -> Resolution.P240
             480 -> Resolution.P480
             720 -> Resolution.P720
             1080 -> Resolution.P1080
-            info.height -> Resolution.ORIGINAL
-            else -> return issue("unsupported_output_height", "output.height", "Supported output heights are 240, 480, 720, 1080, or the source height.")
+            firstInfo.height -> Resolution.ORIGINAL
+            else -> return issue(
+                "unsupported_output_height", "output.height",
+                "Supported output heights are 240, 480, 720, 1080, or the first source height."
+            )
         }
         val frameRate = when {
             request.output.frameRateDenominator <= 0 -> null
@@ -83,7 +145,10 @@ class AndroidFfmpegProductionJobFactory(
             request.output.frameRateNumerator.toDouble() / request.output.frameRateDenominator == 24.0 -> Framerate.FPS24
             request.output.frameRateNumerator.toDouble() / request.output.frameRateDenominator == 30.0 -> Framerate.FPS30
             else -> null
-        } ?: return issue("unsupported_frame_rate", "output.frameRate", "The FFmpeg MVP supports 10, 15, 24, or 30 fps.")
+        } ?: return issue(
+            "unsupported_frame_rate", "output.frameRate",
+            "The FFmpeg MVP supports 10, 15, 24, or 30 fps."
+        )
         if (request.output.width <= 0 || request.output.height <= 0) return issue(
             "invalid_output_dimensions", "output.width/height", "Output dimensions must be positive."
         )
@@ -92,8 +157,11 @@ class AndroidFfmpegProductionJobFactory(
             request.output.width.toLong() * 9 == request.output.height.toLong() * 16 -> CanvasRatio.LANDSCAPE_16_9
             request.output.width.toLong() * 16 == request.output.height.toLong() * 9 -> CanvasRatio.PORTRAIT_9_16
             request.output.width.toLong() * 3 == request.output.height.toLong() * 4 -> CanvasRatio.LANDSCAPE_4_3
-            request.output.width == info.width && request.output.height == info.height -> CanvasRatio.FIT
-            else -> return issue("unsupported_output_ratio", "output.width/height", "The requested aspect ratio is not supported by the first FFmpeg mapper.")
+            request.output.width == firstInfo.width && request.output.height == firstInfo.height -> CanvasRatio.FIT
+            else -> return issue(
+                "unsupported_output_ratio", "output.width/height",
+                "The requested aspect ratio is not supported by the first FFmpeg mapper."
+            )
         }
         if (request.output.container.lowercase() !in setOf("mp4", "video/mp4")) return issue(
             "unsupported_container", "output.container", "The first production mapper exports MP4 only."
@@ -104,23 +172,19 @@ class AndroidFfmpegProductionJobFactory(
         if (request.output.audioCodec?.lowercase()?.let { it != "aac" } == true) return issue(
             "unsupported_audio_codec", "output.audioCodec", "The first production mapper supports AAC audio only."
         )
-        val fileName = asset.displayName.ifBlank { request.project.name.ifBlank { "production" } }
+
         val conversion = ConversionRequest(
             format = OutputFormat.MP4,
-            inputFileName = fileName,
-            sources = listOf(SourceInfo(
-                durationMs = info.durationMs, width = info.width, height = info.height,
-                hasAudio = info.hasAudio, isStill = false, hdr = info.hdr, frameRate = info.frameRate,
-                hasAlpha = info.hasAlpha,
-            )),
-            segments = listOf(Segment(source = 0, startMs = 0L, endMs = duration)),
+            inputFileName = sources.first().displayName,
+            sources = sourceInfo,
+            segments = segments,
             encoding = EncodingSettings(resolution = resolution, framerate = frameRate),
             canvas = ratio,
             canvasFit = CanvasFit.FIT,
         )
         return FfmpegJobPreparation(job = ConversionJob(
             request = conversion,
-            sources = MediaSources(inputs = listOf(NamedSource(asset.uri, fileName))),
+            sources = MediaSources(inputs = sources),
             mode = CommandMode.Generated,
         ))
     }
