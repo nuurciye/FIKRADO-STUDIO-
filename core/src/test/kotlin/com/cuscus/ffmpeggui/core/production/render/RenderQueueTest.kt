@@ -163,10 +163,16 @@ class RenderQueueTest {
             val queue = RenderQueue(scope, RenderOrchestrator(EngineRegistry(listOf(QueueAdapter()))), store)
             queue.restore()
 
-            val completed = queue.jobs.first { jobs ->
-                jobs.singleOrNull()?.status == RenderJobStatus.SUCCEEDED
+            val terminal = queue.jobs.first { jobs ->
+                jobs.singleOrNull()?.status in setOf(
+                    RenderJobStatus.SUCCEEDED, RenderJobStatus.FAILED, RenderJobStatus.CANCELLED
+                )
             }
-            assertEquals(RenderJobStatus.SUCCEEDED, completed.single().status)
+            assertEquals(
+                "Recovered render did not succeed. Issues: ${terminal.single().issues}",
+                RenderJobStatus.SUCCEEDED,
+                terminal.single().status,
+            )
             assertEquals(RenderJobStatus.SUCCEEDED, store.loadAll().single().snapshot.status)
         } finally {
             scope.cancel()
