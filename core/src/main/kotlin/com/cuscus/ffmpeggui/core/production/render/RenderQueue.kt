@@ -5,6 +5,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -97,12 +98,12 @@ class RenderQueue(
                         workerRunning = false
                         return
                     }
-                    plans.removeFirst().also { plan ->
-                        update(plan.jobId) { it.copy(status = RenderJobStatus.RUNNING) }
-                    }
+                    plans.removeFirst()
                 }
 
-                val worker = scope.launch {
+                // Register the lazy job before exposing RUNNING, so cancel()
+                // can never observe a running item without its worker handle.
+                val worker = scope.launch(start = CoroutineStart.LAZY) {
                     try {
                         val result = orchestrator.execute(plan) { progress ->
                             scope.launch {
@@ -142,7 +143,11 @@ class RenderQueue(
                         throw cancelled
                     }
                 }
-                mutex.withLock { workerJobs[plan.jobId] = worker }
+                mutex.withLock {
+                    workerJobs[plan.jobId] = worker
+                    update(plan.jobId) { it.copy(status = RenderJobStatus.RUNNING) }
+                }
+                worker.start()
                 try {
                     worker.join()
                 } finally {
