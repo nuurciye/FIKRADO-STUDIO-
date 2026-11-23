@@ -18,7 +18,10 @@ object ProductionLayerTimeline {
         if (deltaMs == 0L) return scene
         val target = scene.layers.firstOrNull { it.id.value == layerId } ?: return scene
         val moved = target.copy(startMs = (target.startMs + deltaMs).coerceAtLeast(0L))
-        return scene.copy(\n            layers = scene.layers.map { if (it.id == target.id) moved else it },\n            durationMs = maxOf(scene.durationMs, moved.startMs + moved.durationMs),\n        )
+        return scene.copy(
+            layers = scene.layers.map { if (it.id == target.id) moved else it },
+            durationMs = maxOf(scene.durationMs, moved.startMs + moved.durationMs),
+        )
     }
 
     fun trimEnd(
