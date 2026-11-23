@@ -96,6 +96,20 @@ class AndroidFfmpegProductionJobFactoryTest {
         )))
         assertEquals("unsupported_container", result.issues.single().code)
     }
+
+    @Test fun rejectsUnsupportedVideoCodec() = runBlocking {
+        val result = factory().prepare(request(output = RenderOutputSpec(
+            1920, 1080, 30, 1, "mp4", "vp9", outputUri = "content://output/1",
+        )))
+        assertEquals("unsupported_video_codec", result.issues.single().code)
+    }
+
+    @Test fun rejectsUnsupportedAudioCodec() = runBlocking {
+        val result = factory().prepare(request(output = RenderOutputSpec(
+            1920, 1080, 30, 1, "mp4", "h264", "opus", "content://output/1",
+        )))
+        assertEquals("unsupported_audio_codec", result.issues.single().code)
+    }
     @Test fun adapterPublishesCompletedFileToTheRequestedContentUri() = runBlocking {
         var publishedSource: String? = null
         var publishedDestination: String? = null
