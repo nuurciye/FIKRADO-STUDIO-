@@ -605,6 +605,7 @@ class MainActivity : ComponentActivity() {
                                 onDeleteProject = { project -> if (project.drawing) drawingStore.delete(project.id) else projectStore.delete(project.id) },
                                 onCompress = { compressPicker.launch(arrayOf("video/*", "audio/*", "image/*")) },
                                 onCheckAi = { aiCheckPicker.launch(arrayOf("image/*", "audio/*", "video/*")) },
+                                onOpenProductionStudio = { navController.navigate(Screen.ProductionStudio.route) },
                                 onEditSvg = { uri ->
                                     svgEditor.open(uri)
                                     navController.navigate(Screen.SvgEditor.route)
@@ -669,6 +670,79 @@ class MainActivity : ComponentActivity() {
                                 check = checker::check,
                                 onPickAnother = { another.launch(arrayOf("image/*", "audio/*", "video/*")) },
                                 onOpenMarks = { navController.navigate(Screen.settingsCategory(SettingsCategory.SMART)) },
+                                onBack = { navController.popBackStack() },
+                            )
+                        }
+
+                        composable(Screen.ProductionStudio.route) {
+                            var productionProjects by remember {
+                                mutableStateOf(emptyList<com.cuscus.ffmpeggui.core.production.model.ProductionProject>())
+                            }
+                            val productionScope = rememberCoroutineScope()
+                            val productionRepository = container.productionProjectRepository
+                            LaunchedEffect(Unit) {
+                                productionProjects = withContext(Dispatchers.IO) { productionRepository.loadAll() }
+                            }
+                            ProductionStudioScreen(
+                                projects = productionProjects,
+                                onCreate = { name, profile ->
+                                    productionScope.launch {
+                                        val now = System.currentTimeMillis()
+                                        val project = com.cuscus.ffmpeggui.core.production.model.ProductionProject(
+                                            id = com.cuscus.ffmpeggui.core.production.model.ProjectId(java.util.UUID.randomUUID().toString()),
+                                            name = name,
+                                            profile = profile,
+                                            settings = com.cuscus.ffmpeggui.core.production.model.ProductionSettings(
+                                                width = 1080,
+                                                height = 1920,
+                                                frameRateNumerator = 30,
+                                                frameRateDenominator = 1,
+                                            ),
+                                            scenes = emptyList(),
+                                            assets = emptyList(),
+                                            metadata = com.cuscus.ffmpeggui.core.production.model.ProjectMetadata(
+                                                createdAtEpochMs = now,
+                                                modifiedAtEpochMs = now,
+                                            ),
+                                        )
+                                        try {
+                                            withContext(Dispatchers.IO) { productionRepository.save(project) }
+                                            productionProjects = withContext(Dispatchers.IO) { productionRepository.loadAll() }
+                                            android.widget.Toast.makeText(
+                                                this@MainActivity,
+                                                "Production project saved",
+                                                android.widget.Toast.LENGTH_SHORT,
+                                            ).show()
+                                        } catch (failure: Exception) {
+                                            android.widget.Toast.makeText(
+                                                this@MainActivity,
+                                                failure.message ?: "Could not save production project",
+                                                android.widget.Toast.LENGTH_LONG,
+                                            ).show()
+                                        }
+                                    }
+                                },
+                                onOpen = { project ->
+                                    android.widget.Toast.makeText(
+                                        this@MainActivity,
+                                        "${project.name} is saved. Scene editing is the next production milestone.",
+                                        android.widget.Toast.LENGTH_LONG,
+                                    ).show()
+                                },
+                                onDelete = { project ->
+                                    productionScope.launch {
+                                        try {
+                                            withContext(Dispatchers.IO) { productionRepository.delete(project.id) }
+                                            productionProjects = withContext(Dispatchers.IO) { productionRepository.loadAll() }
+                                        } catch (failure: Exception) {
+                                            android.widget.Toast.makeText(
+                                                this@MainActivity,
+                                                failure.message ?: "Could not delete production project",
+                                                android.widget.Toast.LENGTH_LONG,
+                                            ).show()
+                                        }
+                                    }
+                                },
                                 onBack = { navController.popBackStack() },
                             )
                         }
