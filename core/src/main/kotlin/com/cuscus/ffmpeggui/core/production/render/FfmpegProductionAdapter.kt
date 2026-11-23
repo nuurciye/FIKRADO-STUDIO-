@@ -39,9 +39,9 @@ fun interface FfmpegProductionRunner {
 /**
  * Adapts the mature ConversionEngine to the multi-engine production contract.
  *
- * This adapter intentionally advertises only VIDEO layers. It does not claim
- * support for timelines, overlays, audio-only tracks, 3D, or composition layers
- * until the platform mapper can translate those semantics without data loss.
+ * This adapter currently supports sequential VIDEO layers plus independent
+ * AUDIO layers. It does not claim support for overlays, audio-only tracks, 3D,
+ * or composition layers until the platform mapper can preserve those semantics.
  */
 class FfmpegProductionAdapter(
     private val runner: FfmpegProductionRunner,
