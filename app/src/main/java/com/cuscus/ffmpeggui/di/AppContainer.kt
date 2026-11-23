@@ -44,6 +44,7 @@ import com.cuscus.ffmpeggui.media.SystemFontProvider
 import com.cuscus.ffmpeggui.speech.SmartFeatures
 import com.cuscus.ffmpeggui.subtitles.SubtitleFonts
 import com.cuscus.ffmpeggui.core.command.FontProvider
+import com.cuscus.ffmpeggui.production.AndroidFfmpegProductionJobFactory
 
 /**
  * Hand-written dependency graph.
@@ -200,7 +201,8 @@ class AppContainer(
      * requests must be explicit and lossless.
      */
     fun productionEngineRegistry(
-        jobFactory: com.cuscus.ffmpeggui.core.production.render.FfmpegProductionJobFactory,
+        jobFactory: com.cuscus.ffmpeggui.core.production.render.FfmpegProductionJobFactory =
+            AndroidFfmpegProductionJobFactory(mediaProbe),
     ): com.cuscus.ffmpeggui.core.production.render.EngineRegistry {
         val adapter = com.cuscus.ffmpeggui.core.production.render.FfmpegProductionAdapter(
             runner = com.cuscus.ffmpeggui.core.production.render.FfmpegProductionRunner { job, onEvent ->
