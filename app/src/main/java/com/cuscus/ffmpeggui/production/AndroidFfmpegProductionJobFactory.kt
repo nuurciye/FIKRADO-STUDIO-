@@ -84,12 +84,14 @@ class AndroidFfmpegProductionJobFactory(
             request.output.frameRateNumerator.toDouble() / request.output.frameRateDenominator == 30.0 -> Framerate.FPS30
             else -> null
         } ?: return issue("unsupported_frame_rate", "output.frameRate", "The FFmpeg MVP supports 10, 15, 24, or 30 fps.")
+        if (request.output.width <= 0 || request.output.height <= 0) return issue(
+            "invalid_output_dimensions", "output.width/height", "Output dimensions must be positive."
+        )
         val ratio = when {
             request.output.width == request.output.height -> CanvasRatio.SQUARE
             request.output.width.toLong() * 9 == request.output.height.toLong() * 16 -> CanvasRatio.LANDSCAPE_16_9
             request.output.width.toLong() * 16 == request.output.height.toLong() * 9 -> CanvasRatio.PORTRAIT_9_16
             request.output.width.toLong() * 3 == request.output.height.toLong() * 4 -> CanvasRatio.LANDSCAPE_4_3
-            request.output.width.toLong() * 4 == request.output.height.toLong() * 3 -> CanvasRatio.LANDSCAPE_4_3
             request.output.width == info.width && request.output.height == info.height -> CanvasRatio.FIT
             else -> return issue("unsupported_output_ratio", "output.width/height", "The requested aspect ratio is not supported by the first FFmpeg mapper.")
         }
