@@ -103,16 +103,14 @@ class RenderQueue(
                 }
                 RenderJobStatus.RUNNING -> {
                     val candidate = workerJobs[jobId]
-                    if (candidate == null || !candidate.isActive) {
-                        // A LAZY worker can be cancelled after RUNNING is published
-                        // but before start() dispatches its body. In that state its
-                        // cancellation handler never runs, so publish CANCELLED here.
-                        candidate?.cancel()
-                        update(jobId) { it.copy(status = RenderJobStatus.CANCELLED) }
-                        persist(jobId)
-                        return true
-                    }
-                    worker = candidate
+                    // Publish the terminal state while holding the queue mutex.
+                    // Do not rely on the worker's cancellation handler to make this
+                    // observable: a lazy worker may not have entered its body yet,
+                    // and cancellation completion can be delayed by adapter cleanup.
+                    candidate?.cancel(CancellationException("Render cancelled by request."))
+                    update(jobId) { it.copy(status = RenderJobStatus.CANCELLED) }
+                    persist(jobId)
+                    worker = null
                 }
                 RenderJobStatus.SUCCEEDED,
                 RenderJobStatus.FAILED,
@@ -182,8 +180,11 @@ class RenderQueue(
                     } catch (cancelled: CancellationException) {
                         withContext(NonCancellable) {
                             mutex.withLock {
-                                update(plan.jobId) { it.copy(status = RenderJobStatus.CANCELLED) }
-                                persist(plan.jobId)
+                                val current = mutableJobs.value.firstOrNull { it.jobId == plan.jobId }
+                                if (current != null && current.status != RenderJobStatus.CANCELLED) {
+                                    update(plan.jobId) { it.copy(status = RenderJobStatus.CANCELLED) }
+                                    persist(plan.jobId)
+                                }
                             }
                         }
                         throw cancelled
