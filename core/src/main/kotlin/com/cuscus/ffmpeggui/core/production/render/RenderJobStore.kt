@@ -54,6 +54,7 @@ class JsonFileRenderJobStore(
         } finally {
             if (temporary.exists()) temporary.delete()
         }
+        Unit
     }
 
     override suspend fun loadAll(): List<StoredRenderJob> = withContext(Dispatchers.IO) {
