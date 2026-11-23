@@ -106,18 +106,25 @@ class AndroidFfmpegProductionJobFactory(
             val displayName = asset.displayName.ifBlank {
                 request.project.name.ifBlank { "clip-${index + 1}.mp4" }
             }
-            sources += NamedSource(asset.uri, displayName)
-            sourceInfo += SourceInfo(
-                durationMs = info.durationMs,
-                width = info.width,
-                height = info.height,
-                hasAudio = info.hasAudio,
-                isStill = false,
-                hdr = info.hdr,
-                frameRate = info.frameRate,
-                hasAlpha = info.hasAlpha,
-            )
-            segments += Segment(source = index, startMs = 0L, endMs = layer.durationMs, clipId = layer.id.value)
+            // Reuse one ConversionRequest source slot for repeated references to the
+            // same asset. Timeline segments still retain their own order and identity.
+            val sourceIndex = sources.indexOfFirst { it.uri == asset.uri }.let { existing ->
+                if (existing >= 0) existing else {
+                    sources += NamedSource(asset.uri, displayName)
+                    sourceInfo += SourceInfo(
+                        durationMs = info.durationMs,
+                        width = info.width,
+                        height = info.height,
+                        hasAudio = info.hasAudio,
+                        isStill = false,
+                        hdr = info.hdr,
+                        frameRate = info.frameRate,
+                        hasAlpha = info.hasAlpha,
+                    )
+                    sources.lastIndex
+                }
+            }
+            segments += Segment(source = sourceIndex, startMs = 0L, endMs = layer.durationMs, clipId = layer.id.value)
             timelineCursor += layer.durationMs
         }
 
