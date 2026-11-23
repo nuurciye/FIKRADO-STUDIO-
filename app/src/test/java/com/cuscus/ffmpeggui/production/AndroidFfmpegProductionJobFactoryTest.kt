@@ -83,6 +83,49 @@ class AndroidFfmpegProductionJobFactoryTest {
         assertEquals(listOf("clip-a", "clip-b", "clip-c"), job.request.segments.map { it.clipId })
     }
 
+    @Test fun preservesTrimmedSourceInAndOutPointsInExportSegments() = runBlocking {
+        val trimmed = ProductionLayer(
+            id = LayerId("layer-trimmed"),
+            kind = LayerKind.VIDEO,
+            startMs = 0L,
+            durationMs = 2_500L,
+            assetId = assetId,
+            properties = mapOf("sourceStartMs" to "1500", "sourceEndMs" to "4000"),
+        )
+        val prepared = factory().prepare(request(layer = trimmed, sceneDurationMs = 2_500L))
+        assertTrue(prepared.issues.toString(), prepared.issues.isEmpty())
+        val segment = requireNotNull(prepared.job).request.segments.single()
+        assertEquals(1_500L, segment.startMs)
+        assertEquals(4_000L, segment.endMs)
+        assertEquals(2_500L, segment.durationMs)
+    }
+
+    @Test fun rejectsTrimmedSourceRangeBeyondReadableMediaDuration() = runBlocking {
+        val invalid = ProductionLayer(
+            id = LayerId("layer-invalid-range"),
+            kind = LayerKind.VIDEO,
+            startMs = 0L,
+            durationMs = 2_000L,
+            assetId = assetId,
+            properties = mapOf("sourceStartMs" to "4000", "sourceEndMs" to "6000"),
+        )
+        val result = factory().prepare(request(layer = invalid, sceneDurationMs = 2_000L))
+        assertEquals("clip_exceeds_source", result.issues.single().code)
+    }
+
+    @Test fun rejectsTrimmedSourceRangeWhoseLengthDoesNotMatchClipDuration() = runBlocking {
+        val invalid = ProductionLayer(
+            id = LayerId("layer-mismatched-range"),
+            kind = LayerKind.VIDEO,
+            startMs = 0L,
+            durationMs = 2_000L,
+            assetId = assetId,
+            properties = mapOf("sourceStartMs" to "1000", "sourceEndMs" to "4000"),
+        )
+        val result = factory().prepare(request(layer = invalid, sceneDurationMs = 2_000L))
+        assertEquals("source_range_duration_mismatch", result.issues.single().code)
+    }
+
     @Test fun rejectsTimelineGapInsteadOfSilentlyFlatteningIt() = runBlocking {
         val layers = listOf(
             ProductionLayer(LayerId("clip-a"), LayerKind.VIDEO, 0, 2_000, assetId),
