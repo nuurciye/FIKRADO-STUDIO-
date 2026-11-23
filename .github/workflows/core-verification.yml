@@ -62,5 +62,11 @@ jobs:
       - name: Fetch pinned FFmpeg runtime
         run: bash scripts/fetch-ffmpeg-kit-next.sh
 
+      - name: Fetch pinned Sherpa ONNX runtime
+        run: bash scripts/fetch-sherpa-onnx.sh
+
       - name: Compile Android app Kotlin
         run: ./gradlew :app:compileDebugKotlin --no-daemon --stacktrace
+
+      - name: Run Android production factory unit tests
+        run: ./gradlew :app:testDebugUnitTest --tests '*AndroidFfmpegProductionJobFactoryTest' --no-daemon --stacktrace
