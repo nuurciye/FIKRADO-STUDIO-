@@ -218,8 +218,8 @@ class AndroidFfmpegProductionJobFactoryTest {
             durationMs = 3_000L,
             assetId = audioId,
             properties = mapOf(
-                "sourceStartMs" to "2_000",
-                "sourceEndMs" to "5_000",
+                "sourceStartMs" to "2000",
+                "sourceEndMs" to "5000",
                 "speed" to "1.5",
                 "repeats" to "2",
             ),
